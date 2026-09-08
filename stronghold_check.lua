@@ -4,15 +4,12 @@ local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
--- Настройки
 local uiName = "AndroidSecPanel"
 getgenv().AutoHopEnabled = getgenv().AutoHopEnabled or false
 
--- Удаление старого UI
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
 
--- Создаем интерфейс
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = uiName
 ScreenGui.ResetOnSpawn = false
@@ -34,7 +31,7 @@ Title.Size = UDim2.new(1, 0, 0, 30)
 Title.Text = " Mobile Sec-Panel | 99 Nights"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.Code
-Title.TextSize = 14
+Title.TextSize = 13
 Title.BackgroundTransparency = 1
 Title.Parent = Frame
 
@@ -68,7 +65,7 @@ AutoHopBtn.Font = Enum.Font.Code
 AutoHopBtn.TextSize = 14
 AutoHopBtn.Parent = Frame
 
--- ФУНКЦИИ
+-- ЧЕК СТРОНГХОЛДА
 local function CheckStronghold()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then
@@ -78,86 +75,76 @@ local function CheckStronghold()
     return nil
 end
 
+-- СЕРВЕР ХОП
 local isHopping = false
 local function ServerHop()
     if isHopping then return end
     isHopping = true
-    Title.Text = " Поиск сервера..."
+    Title.Text = " Ищу сервер..."
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
     local cursor = ""
-    local foundServer = false
+    local found = false
 
-    -- Функция очереди скрипта
-    local function queueScript()
-        local q_on_tp = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-        if q_on_tp then
-            pcall(function()
-                q_on_tp([[
-                    getgenv().AutoHopEnabled = true
-                    repeat task.wait() until game:IsLoaded()
-                    loadstring(game:HttpGet('https://raw.githubusercontent.com/nobeggars/bp/refs/heads/main/stronghold_check.lua'))()
-                ]])
-            end)
-        end
+    -- Очередь для перезапуска скрипта при прыжке
+    local q_on_tp = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    if q_on_tp then
+        pcall(function()
+            q_on_tp([[
+                getgenv().AutoHopEnabled = true
+                repeat task.wait() until game:IsLoaded()
+                loadstring(game:HttpGet('https://raw.githubusercontent.com/nobeggars/bp/refs/heads/main/stronghold_check.lua'))()
+            ]])
+        end)
     end
 
-    -- Обработка сбоя телепорта
-    local conn
-    conn = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-        if player == LocalPlayer then
-            conn:Disconnect()
-            isHopping = false
-            Title.Text = " Сбой ТП, повторяю..."
-            task.wait(2)
-            ServerHop()
+    -- Перебор серверов через ропрокси и обычный домен
+    for attempt = 1, 5 do
+        local raw = nil
+        local urlProxy = "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+        local urlDirect = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+
+        -- Пробуем через прокси
+        local s, res = pcall(function() return game:HttpGet(urlProxy) end)
+        if s and res and not string.find(res, "errors") then
+            raw = res
+        else
+            -- Фоллбэк напрямую
+            local s2, res2 = pcall(function() return game:HttpGet(urlDirect) end)
+            if s2 and res2 then raw = res2 end
         end
-    end)
 
-    -- Перебор страниц серверов
-    for _ = 1, 3 do
-        local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100%s", tostring(placeId), cursor ~= "" and ("&cursor=" .. cursor) or "")
-        local reqSuccess, rawData = pcall(function()
-            return game:HttpGet(url)
-        end)
-
-        if reqSuccess and rawData then
-            local decodeSuccess, parsed = pcall(function()
-                return HttpService:JSONDecode(rawData)
-            end)
-
-            if decodeSuccess and parsed and parsed.data then
-                for _, srv in ipairs(parsed.data) do
-                    if type(srv) == "table" and srv.playing and srv.maxPlayers then
-                        if srv.playing < srv.maxPlayers and srv.id ~= currentJob then
-                            queueScript()
-                            local tpSuccess = pcall(function()
-                                TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
-                            end)
-                            if tpSuccess then
-                                foundServer = true
-                                break
-                            end
+        if raw then
+            local decSuccess, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if decSuccess and data and data.data then
+                for _, srv in ipairs(data.data) do
+                    if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
+                        Title.Text = " Прыгаем на " .. tostring(srv.playing) .. " игроков..."
+                        local tpSuccess = pcall(function()
+                            TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
+                        end)
+                        if tpSuccess then
+                            found = true
+                            return
                         end
                     end
                 end
 
-                if foundServer then break end
-                if parsed.nextPageCursor then
-                    cursor = parsed.nextPageCursor
+                if data.nextPageCursor then
+                    cursor = data.nextPageCursor
                 else
-                    break
+                    cursor = ""
                 end
             end
         end
-        task.wait(1)
+        task.wait(1.5)
     end
 
-    if not foundServer then
+    if not found then
         isHopping = false
-        Title.Text = " Сервер не найден, ретрай..."
-        task.wait(3)
+        Title.Text = " Лимит API. Ретрай через 5с..."
+        task.wait(5)
         ServerHop()
     end
 end
@@ -199,8 +186,8 @@ AutoHopBtn.MouseButton1Click:Connect(function()
             if target then
                 getgenv().AutoHopEnabled = false
                 AutoHopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-                AutoHopBtn.Text = "НАЙДЕН! ХОП ОСТАНОВЛЕН"
-                Title.Text = " Найдено!"
+                AutoHopBtn.Text = "НАЙДЕН! СТОП"
+                Title.Text = " Стронгхолд тут!"
             else
                 ServerHop()
             end
@@ -212,17 +199,24 @@ AutoHopBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- АВТО-ПРОВЕРКА ПРИ ПЕРЕХОДЕ
+-- АВТО-ПРОВЕРКА ПРИ ЗАГРУЗКЕ
 if getgenv().AutoHopEnabled then
     task.spawn(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
-        task.wait(3) -- Даем карте прогрузиться
+        task.wait(4)
         local target = CheckStronghold()
         if target then
             getgenv().AutoHopEnabled = false
             AutoHopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-            AutoHopBtn.Text = "НАЙДЕН! ХОП ОСТАНОВЛЕН"
-            Title.Text = " Найдено!"
+            AutoHopBtn.Text = "НАЙДЕН! СТОП"
+            Title.Text = " Стронгхолд тут!"
+            
+            local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local hrp = char:WaitForChild("HumanoidRootPart", 5)
+            if hrp then
+                local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.CFrame or target:GetPivot()) or target.CFrame
+                if pos then hrp.CFrame = pos end
+            end
         else
             ServerHop()
         end
