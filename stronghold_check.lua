@@ -33,7 +33,7 @@ UICorner.CornerRadius = UDim.new(0, 10)
 
 local UIStroke = Instance.new("UIStroke", Main)
 UIStroke.Thickness = 2
-UIStroke.Color = Color3.fromRGB(255, 0, 127) -- Неоновый розовый акцент
+UIStroke.Color = Color3.fromRGB(255, 0, 127)
 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 -- Заголовок
@@ -46,7 +46,7 @@ Title.TextSize = 14
 Title.BackgroundTransparency = 1
 Title.Parent = Main
 
--- Анимированная полоса загрузки / статус-бар
+-- Анимированная полоса загрузки
 local LoadingBg = Instance.new("Frame")
 LoadingBg.Size = UDim2.new(1, -20, 0, 4)
 LoadingBg.Position = UDim2.new(0, 10, 0, 35)
@@ -57,7 +57,7 @@ Instance.new("UICorner", LoadingBg).CornerRadius = UDim.new(1, 0)
 
 local LoadingBar = Instance.new("Frame")
 LoadingBar.Size = UDim2.new(0, 0, 1, 0)
-LoadingBar.BackgroundColor3 = Color3.fromRGB(0, 255, 200) -- Циановый неон
+LoadingBar.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
 LoadingBar.BorderSizePixel = 0
 LoadingBar.Parent = LoadingBg
 Instance.new("UICorner", LoadingBar).CornerRadius = UDim.new(1, 0)
@@ -68,7 +68,7 @@ local function SetProgress(ratio)
     }):Play()
 end
 
--- Лог-консоль для вывода ошибок
+-- Лог-консоль
 local LogFrame = Instance.new("ScrollingFrame")
 LogFrame.Size = UDim2.new(1, -20, 0, 50)
 LogFrame.Position = UDim2.new(0, 10, 0, 45)
@@ -89,7 +89,7 @@ LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Готов к работе..."
+LogText.Text = "[SYS] Ядро переписано. Готов..."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -102,7 +102,7 @@ local function AddLog(msg, isErr)
     end
 end
 
--- Кнопки-генераторы
+-- Кнопки
 local function CreateNeonButton(name, text, posY, color)
     local btn = Instance.new("TextButton")
     btn.Name = name
@@ -145,13 +145,40 @@ local function CheckStronghold()
     return nil
 end
 
--- АВТО-ХОП С ОБРАБОТКОЙ ОШИБОК И ФОЛЛБЭКОМ
+-- УНИВЕРСАЛЬНЫЙ HTTP РЕКВЕСТЕР
+local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+
+local function FetchServers(url)
+    if executor_request then
+        local success, res = pcall(function()
+            return executor_request({
+                Url = url,
+                Method = "GET"
+            })
+        end)
+        if success and res then
+            if res.StatusCode == 200 then
+                return true, res.Body
+            else
+                return false, "HTTP " .. tostring(res.StatusCode)
+            end
+        else
+            return false, "Request throw: " .. tostring(res)
+        end
+    else
+        -- Фоллбэк только если вообще нет функции request (крайний случай)
+        local success, res = pcall(function() return game:HttpGet(url) end)
+        if success then return true, res else return false, "HttpGet err: " .. tostring(res) end
+    end
+end
+
+-- АВТО-ХОП БЕЗ КРИВЫХ ФОЛЛБЭКОВ
 local isHopping = false
 local function ServerHop()
     if isHopping then return end
     isHopping = true
     SetProgress(0.2)
-    AddLog("Старт поиска сервера...")
+    AddLog("Старт поиска (Request API)...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
@@ -174,54 +201,54 @@ local function ServerHop()
         "https://games.roblox.com/v1/games/%s/servers/Public?limit=100"
     }
 
-    for idx, baseUri in ipairs(endpoints) do
-        AddLog("Запрос через Endpoint #" .. tostring(idx))
-        SetProgress(0.4 + (idx * 0.2))
+    for attempt = 1, 3 do
+        if found then break end
+        
+        for idx, baseUri in ipairs(endpoints) do
+            AddLog("Чек Endpoint #" .. tostring(idx))
+            SetProgress(0.4 + (idx * 0.1))
 
-        local uri = string.format(baseUri, tostring(placeId))
-        local reqOk, raw = pcall(function() return game:HttpGet(uri) end)
+            local uri = string.format(baseUri, tostring(placeId))
+            local reqOk, raw = FetchServers(uri)
 
-        if not reqOk then
-            AddLog("HttpGet Err: " .. tostring(raw):sub(1, 35), true)
-        elseif raw and raw ~= "" then
-            local decOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
-            if not decOk then
-                AddLog("JSON Parse Err: " .. tostring(data):sub(1, 30), true)
-            elseif data and data.data then
-                for _, srv in ipairs(data.data) do
-                    if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
-                        AddLog("Найден сервер! Прыжок...")
-                        SetProgress(1.0)
-                        local tpOk, tpErr = pcall(function()
-                            TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
-                        end)
-                        if tpOk then
-                            found = true
-                            return
-                        else
-                            AddLog("TP Error: " .. tostring(tpErr):sub(1, 30), true)
+            if not reqOk then
+                AddLog("Req Err: " .. tostring(raw):sub(1, 35), true)
+            elseif raw and raw ~= "" then
+                local decOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
+                if not decOk then
+                    AddLog("JSON Parse Err", true)
+                elseif data and data.data then
+                    for _, srv in ipairs(data.data) do
+                        if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
+                            AddLog("Сервер найден! ТП...")
+                            SetProgress(1.0)
+                            local tpOk, tpErr = pcall(function()
+                                TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
+                            end)
+                            if tpOk then
+                                found = true
+                                return
+                            else
+                                AddLog("TP 773/Err: " .. tostring(tpErr):sub(1, 30), true)
+                            end
                         end
                     end
+                elseif data and data.errors then
+                    AddLog("API Err: " .. tostring(data.errors[1] and data.errors[1].message or "Unknown"), true)
                 end
-            elseif data and data.errors then
-                AddLog("API Err: " .. tostring(data.errors[1] and data.errors[1].message or "Unknown"), true)
             end
+            task.wait(1.5)
         end
-        task.wait(1)
     end
 
-    -- ФОЛЛБЭК: Если API на эмуляторе заблокировано
     if not found then
-        AddLog("API недоступно. Фоллбэк ТП...", true)
-        SetProgress(0.8)
-        task.wait(1.5)
-        local fbOk, fbErr = pcall(function()
-            TeleportService:Teleport(placeId, LocalPlayer)
-        end)
-        if not fbOk then
-            AddLog("Fallback Err: " .. tostring(fbErr):sub(1, 30), true)
-            isHopping = false
-            SetProgress(0)
+        AddLog("Сервер не найден! Ждем 5с...", true)
+        SetProgress(0)
+        isHopping = false
+        task.wait(5)
+        -- Ретрай нормального поиска, без кривого Teleport(placeId)!
+        if getgenv().AutoHopEnabled then
+            ServerHop()
         end
     end
 end
@@ -285,6 +312,7 @@ AutoHopBtn.MouseButton1Click:Connect(function()
         HopStroke.Color = Color3.fromRGB(255, 70, 100)
         AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
         SetProgress(0)
+        isHopping = false
         AddLog("Авто-хоп отключен")
     end
 end)
@@ -298,7 +326,6 @@ DumpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ПРОВЕРКА ПРИ ЗАГРУЗКЕ
 if getgenv().AutoHopEnabled then
     task.spawn(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
