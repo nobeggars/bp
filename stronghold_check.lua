@@ -8,7 +8,6 @@ local TweenService = game:GetService("TweenService")
 local uiName = "NeonSecHub_99Nights"
 getgenv().AutoHopEnabled = getgenv().AutoHopEnabled or false
 
--- Очистка старого UI
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
 
@@ -36,7 +35,6 @@ UIStroke.Thickness = 2
 UIStroke.Color = Color3.fromRGB(255, 0, 127)
 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
--- Заголовок
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.Text = "★ NEON SEC-PANEL ★"
@@ -46,7 +44,6 @@ Title.TextSize = 14
 Title.BackgroundTransparency = 1
 Title.Parent = Main
 
--- Анимированная полоса загрузки
 local LoadingBg = Instance.new("Frame")
 LoadingBg.Size = UDim2.new(1, -20, 0, 4)
 LoadingBg.Position = UDim2.new(0, 10, 0, 35)
@@ -68,7 +65,6 @@ local function SetProgress(ratio)
     }):Play()
 end
 
--- Лог-консоль
 local LogFrame = Instance.new("ScrollingFrame")
 LogFrame.Size = UDim2.new(1, -20, 0, 50)
 LogFrame.Position = UDim2.new(0, 10, 0, 45)
@@ -89,7 +85,7 @@ LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Анти-Рейтлимит включен..."
+LogText.Text = "[SYS] Ядро обновлено. CORS Bypass."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -102,7 +98,6 @@ local function AddLog(msg, isErr)
     end
 end
 
--- Кнопки
 local function CreateNeonButton(name, text, posY, color)
     local btn = Instance.new("TextButton")
     btn.Name = name
@@ -135,7 +130,6 @@ local TpBtn, _ = CreateNeonButton("TpBtn", "2. Телепорт к сундук�
 local AutoHopBtn, HopStroke = CreateNeonButton("AutoHopBtn", getgenv().AutoHopEnabled and "3. Авто-Хоп: ВКЛ" or "3. Авто-Хоп: ВЫКЛ", 195, getgenv().AutoHopEnabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 70, 100))
 local DumpBtn, _ = CreateNeonButton("DumpBtn", "4. Копировать лог ошибок", 240, Color3.fromRGB(200, 150, 255))
 
--- ФУНКЦИЯ ПОИСКА
 local function CheckStronghold()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then
@@ -145,39 +139,48 @@ local function CheckStronghold()
     return nil
 end
 
--- УНИВЕРСАЛЬНЫЙ HTTP РЕКВЕСТЕР
 local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
-local function FetchServers(url)
-    if not executor_request then
-        return false, "Executor missing request func"
-    end
+local function FetchServers(targetUrl)
+    if not executor_request then return false, "No Request Func" end
     
-    local success, res = pcall(function()
-        return executor_request({
-            Url = url,
-            Method = "GET"
-        })
-    end)
+    local urlEncoded = HttpService:UrlEncode(targetUrl)
     
-    if success and res then
-        if res.StatusCode == 200 then
+    -- Мощные CORS прокси, которые плюют на Cloudflare
+    local bypassEndpoints = {
+        "https://api.allorigins.win/raw?url=" .. urlEncoded,
+        "https://corsproxy.io/?" .. urlEncoded
+    }
+    
+    for i, endpoint in ipairs(bypassEndpoints) do
+        AddLog(string.format("CORS Bypass #%d...", i))
+        local success, res = pcall(function()
+            return executor_request({
+                Url = endpoint,
+                Method = "GET",
+                Headers = {
+                    ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+            })
+        end)
+        
+        if success and res and res.StatusCode == 200 then
             return true, res.Body
         else
-            return false, tostring(res.StatusCode)
+            AddLog(string.format("CORS #%d fail: HTTP %s", i, tostring(res and res.StatusCode or "nil")), true)
         end
-    else
-        return false, "nil"
+        task.wait(1)
     end
+    
+    return false, "Все CORS прокси мертвы"
 end
 
--- АВТО-ХОП С ОБХОДОМ РЕЙТЛИМИТА (429)
 local isHopping = false
 local function ServerHop()
     if isHopping then return end
     isHopping = true
     SetProgress(0.2)
-    AddLog("Ищем свободный сервер...")
+    AddLog("Ищем сервер через AllOrigins...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
@@ -195,43 +198,17 @@ local function ServerHop()
         end)
     end
 
-    -- Массив прокси. Прямой роблокс убрали, так как он крашит на эмуляторах.
-    local endpoints = {
-        "https://games.roproxy.com/v1/games/%s/servers/Public?limit=100&cursor=%s",
-        "https://roproxy.com/v1/games/%s/servers/Public?limit=100&cursor=%s"
-    }
-
-    local currentEndpoint = 1
-    local retries = 0
-
     while not found and getgenv().AutoHopEnabled do
-        local baseUri = endpoints[currentEndpoint]
-        local uri = string.format(baseUri, tostring(placeId), cursor)
-        
         SetProgress(0.5)
-        AddLog(string.format("Запрос (Proxy #%d)...", currentEndpoint))
+        local targetUrl = string.format("https://games.roblox.com/v1/games/%s/servers/Public?limit=100&cursor=%s", tostring(placeId), cursor)
         
-        local reqOk, rawOrErr = FetchServers(uri)
+        local reqOk, rawOrErr = FetchServers(targetUrl)
 
         if not reqOk then
-            AddLog("Ошибка API: HTTP " .. tostring(rawOrErr), true)
-            
-            if tostring(rawOrErr) == "429" then
-                -- Если поймали 429, меняем прокси и ждем дольше
-                retries = retries + 1
-                currentEndpoint = currentEndpoint == 1 and 2 or 1
-                local waitTime = 5 + (retries * 2) -- Экспоненциальный бэкофф
-                AddLog("Рейтлимит! Ждем " .. waitTime .. "с...", true)
-                SetProgress(0)
-                task.wait(waitTime)
-            else
-                -- Другая ошибка или nil (прокси лег)
-                currentEndpoint = currentEndpoint == 1 and 2 or 1
-                task.wait(3)
-            end
+            AddLog("Сбой сети! Ждем 5с...", true)
+            SetProgress(0)
+            task.wait(5)
         else
-            -- Успешный запрос
-            retries = 0 
             local decOk, data = pcall(function() return HttpService:JSONDecode(rawOrErr) end)
             if decOk and data and data.data then
                 for _, srv in ipairs(data.data) do
@@ -251,9 +228,13 @@ local function ServerHop()
                 if data.nextPageCursor then
                     cursor = data.nextPageCursor
                     AddLog("Читаем следующую страницу...")
+                else
+                    cursor = ""
                 end
+            else
+                AddLog("Ошибка парсинга JSON", true)
             end
-            task.wait(2) -- Пауза между успешными запросами, чтобы не ловить 429
+            task.wait(3) 
         end
     end
 
@@ -263,7 +244,6 @@ local function ServerHop()
     end
 end
 
--- ОБРАБОТЧИКИ КНОПОК
 CheckBtn.MouseButton1Click:Connect(function()
     AddLog("Проверка карты...")
     local target = CheckStronghold()
