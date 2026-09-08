@@ -18,7 +18,7 @@ local success = pcall(function() ScreenGui.Parent = (gethui and gethui()) or Cor
 if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 360)
+Main.Size = UDim2.new(0, 280, 0, 320)
 Main.Position = UDim2.new(0.5, -140, 0.2, 0)
 Main.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 Main.BorderSizePixel = 0
@@ -84,16 +84,13 @@ LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Ядро: API CodeTabs..."
+LogText.Text = "[SYS] SPOOF-ЯДРО АКТИВИРОВАНО..."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
     LogText.Text = string.format("[%s] %s\n", os.date("%X"), msg) .. LogText.Text
-    if isErr then
-        Title.TextColor3 = Color3.fromRGB(255, 70, 70)
-    else
-        Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    end
+    if isErr then Title.TextColor3 = Color3.fromRGB(255, 70, 70)
+    else Title.TextColor3 = Color3.fromRGB(255, 255, 255) end
 end
 
 local function CreateNeonButton(name, text, posY, color)
@@ -126,47 +123,63 @@ end
 local CheckBtn, _ = CreateNeonButton("CheckBtn", "1. Проверить Стронгхолд", 105, Color3.fromRGB(255, 255, 255))
 local TpBtn, _ = CreateNeonButton("TpBtn", "2. Телепорт к сундуку", 150, Color3.fromRGB(255, 255, 255))
 local AutoHopBtn, HopStroke = CreateNeonButton("AutoHopBtn", getgenv().AutoHopEnabled and "3. Авто-Хоп: ВКЛ" or "3. Авто-Хоп: ВЫКЛ", 195, getgenv().AutoHopEnabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 70, 100))
-local ReserveHopBtn, _ = CreateNeonButton("ReserveHopBtn", "РЕЗЕРВНЫЙ СЕРВЕР-ХОП (ПЛАН Б)", 240, Color3.fromRGB(255, 150, 50))
-local DumpBtn, _ = CreateNeonButton("DumpBtn", "Копировать лог ошибок", 285, Color3.fromRGB(200, 150, 255))
+local DumpBtn, _ = CreateNeonButton("DumpBtn", "4. Копировать лог ошибок", 240, Color3.fromRGB(200, 150, 255))
 
 local function CheckStronghold()
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then
-            return obj
-        end
+        if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then return obj end
     end
     return nil
 end
 
 local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
--- ОБХОД ЧЕРЕЗ CODETABS
-local function FetchCodeTabs(cursor)
+-- ГЕНИАЛЬНЫЙ ОБХОД КЛАУДФЛЕРА
+local function FetchLikeAPro(cursor)
     if not executor_request then return false, "No Request Func" end
     
-    local targetRobloxUrl = "https://games.roblox.com/v1/games/"..tostring(game.PlaceId).."/servers/Public?limit=100"
-    if cursor and cursor ~= "" then
-        targetRobloxUrl = targetRobloxUrl .. "&cursor=" .. cursor
-    end
+    local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    if cursor and cursor ~= "" then url = url .. "&cursor=" .. cursor end
     
-    -- Codetabs просто берет и возвращает текст сайта, игнорируя всё
-    local proxyUrl = "https://api.codetabs.com/v1/proxy?quest=" .. targetRobloxUrl
+    -- МАСКИРУЕМСЯ ПОД САМ КЛИЕНТ РОБЛОКСА
+    local headers = {
+        ["User-Agent"] = "Roblox/WinInet",
+        ["Origin"] = "https://www.roblox.com",
+        ["Referer"] = "https://www.roblox.com/",
+        ["Accept"] = "application/json"
+    }
     
     local success, res = pcall(function()
         return executor_request({
-            Url = proxyUrl,
-            Method = "GET"
+            Url = url,
+            Method = "GET",
+            Headers = headers
         })
     end)
     
-    if success and res then
-        if res.StatusCode == 200 then
-            return true, res.Body
-        else
-            return false, "HTTP " .. tostring(res.StatusCode)
-        end
+    if success and res and res.StatusCode == 200 then
+        return true, res.Body
     end
-    return false, "Сбой сети"
+
+    -- Если прямой не прошел (или забанен), делаем то же самое, но через roproxy
+    local proxyUrl = "https://games.roproxy.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    if cursor and cursor ~= "" then proxyUrl = proxyUrl .. "&cursor=" .. cursor end
+    
+    local s2, res2 = pcall(function()
+        return executor_request({
+            Url = proxyUrl,
+            Method = "GET",
+            Headers = headers
+        })
+    end)
+    
+    if s2 and res2 and res2.StatusCode == 200 then
+        return true, res2.Body
+    end
+    
+    local err1 = (res and tostring(res.StatusCode) or "nil")
+    local err2 = (res2 and tostring(res2.StatusCode) or "nil")
+    return false, "Direct:" .. err1 .. " / Proxy:" .. err2
 end
 
 local isHopping = false
@@ -174,7 +187,7 @@ local function ServerHop()
     if isHopping then return end
     isHopping = true
     SetProgress(0.2)
-    AddLog("Ищем через CodeTabs...")
+    AddLog("Подмена User-Agent (Spoofing)...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
@@ -194,19 +207,19 @@ local function ServerHop()
 
     while not found and getgenv().AutoHopEnabled do
         SetProgress(0.5)
-        local reqOk, rawOrErr = FetchCodeTabs(cursor)
+        local reqOk, rawOrErr = FetchLikeAPro(cursor)
 
         if not reqOk then
-            AddLog("Ошибка API: " .. tostring(rawOrErr), true)
-            AddLog("Ждем 3с...", true)
+            AddLog("ОШИБКА: " .. tostring(rawOrErr), true)
+            AddLog("Остываем 5с...", true)
             SetProgress(0)
-            task.wait(3)
+            task.wait(5)
         else
             local decOk, data = pcall(function() return HttpService:JSONDecode(rawOrErr) end)
             if decOk and data and data.data then
                 for _, srv in ipairs(data.data) do
                     if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
-                        AddLog("Сервер найден! ТП...")
+                        AddLog("СЕРВЕР НАЙДЕН! ПРЫЖОК!")
                         SetProgress(1.0)
                         local tpOk = pcall(function()
                             TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
@@ -217,14 +230,13 @@ local function ServerHop()
                         end
                     end
                 end
-                
                 if data.nextPageCursor then
                     cursor = data.nextPageCursor
                 else
                     cursor = ""
                 end
             else
-                AddLog("Парсинг JSON провален", true)
+                AddLog("Ошибка парсинга", true)
             end
             task.wait(2) 
         end
@@ -298,17 +310,6 @@ AutoHopBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- РЕЗЕРВНЫЙ ХОП (ПЛАН Б)
-ReserveHopBtn.MouseButton1Click:Connect(function()
-    AddLog("ЗАПУСК СТОРОННЕГО СКРИПТА ХОПА!")
-    ReserveHopBtn.Text = "ПЕРЕХОДИМ..."
-    task.wait(1)
-    local s, err = pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Infinite-Store/Infinite-Store/main/main.lua"))()
-    end)
-    if not s then AddLog("И он тоже сломан: " .. tostring(err):sub(1,30), true) end
-end)
-
 DumpBtn.MouseButton1Click:Connect(function()
     if setclipboard then setclipboard(LogText.Text) AddLog("Лог скопирован!") end
 end)
@@ -328,3 +329,4 @@ if getgenv().AutoHopEnabled then
         end
     end)
 end
+
