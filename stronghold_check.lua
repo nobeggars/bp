@@ -3,10 +3,12 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
 
-local uiName = "AndroidSecPanel"
+local uiName = "NeonSecHub_99Nights"
 getgenv().AutoHopEnabled = getgenv().AutoHopEnabled or false
 
+-- Очистка старого UI
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
 
@@ -16,56 +18,124 @@ ScreenGui.ResetOnSpawn = false
 local success = pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 250, 0, 190)
-Frame.Position = UDim2.new(0.5, -125, 0.2, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Frame.BorderSizePixel = 2
-Frame.BorderColor3 = Color3.fromRGB(255, 50, 50)
-Frame.Active = true
-Frame.Draggable = true 
-Frame.Parent = ScreenGui
+-- Главный Неоновый Фрейм
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 280, 0, 320)
+Main.Position = UDim2.new(0.5, -140, 0.2, 0)
+Main.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
 
+local UICorner = Instance.new("UICorner", Main)
+UICorner.CornerRadius = UDim.new(0, 10)
+
+local UIStroke = Instance.new("UIStroke", Main)
+UIStroke.Thickness = 2
+UIStroke.Color = Color3.fromRGB(255, 0, 127) -- Неоновый розовый акцент
+UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+-- Заголовок
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.Text = " Mobile Sec-Panel | 99 Nights"
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Text = "★ NEON SEC-PANEL ★"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.Code
-Title.TextSize = 13
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
 Title.BackgroundTransparency = 1
-Title.Parent = Frame
+Title.Parent = Main
 
-local CheckBtn = Instance.new("TextButton")
-CheckBtn.Size = UDim2.new(1, -20, 0, 40)
-CheckBtn.Position = UDim2.new(0, 10, 0, 40)
-CheckBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-CheckBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CheckBtn.Text = "1. Проверить сервер"
-CheckBtn.Font = Enum.Font.Code
-CheckBtn.TextSize = 14
-CheckBtn.Parent = Frame
+-- Анимированная полоса загрузки / статус-бар
+local LoadingBg = Instance.new("Frame")
+LoadingBg.Size = UDim2.new(1, -20, 0, 4)
+LoadingBg.Position = UDim2.new(0, 10, 0, 35)
+LoadingBg.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+LoadingBg.BorderSizePixel = 0
+LoadingBg.Parent = Main
+Instance.new("UICorner", LoadingBg).CornerRadius = UDim.new(1, 0)
 
-local TpBtn = Instance.new("TextButton")
-TpBtn.Size = UDim2.new(1, -20, 0, 40)
-TpBtn.Position = UDim2.new(0, 10, 0, 90)
-TpBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-TpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-TpBtn.Text = "2. Телепорт (ESP)"
-TpBtn.Font = Enum.Font.Code
-TpBtn.TextSize = 14
-TpBtn.Parent = Frame
+local LoadingBar = Instance.new("Frame")
+LoadingBar.Size = UDim2.new(0, 0, 1, 0)
+LoadingBar.BackgroundColor3 = Color3.fromRGB(0, 255, 200) -- Циановый неон
+LoadingBar.BorderSizePixel = 0
+LoadingBar.Parent = LoadingBg
+Instance.new("UICorner", LoadingBar).CornerRadius = UDim.new(1, 0)
 
-local AutoHopBtn = Instance.new("TextButton")
-AutoHopBtn.Size = UDim2.new(1, -20, 0, 40)
-AutoHopBtn.Position = UDim2.new(0, 10, 0, 140)
-AutoHopBtn.BackgroundColor3 = getgenv().AutoHopEnabled and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(150, 50, 50)
-AutoHopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AutoHopBtn.Text = getgenv().AutoHopEnabled and "3. Авто-Хоп: ВКЛ" or "3. Авто-Хоп: ВЫКЛ"
-AutoHopBtn.Font = Enum.Font.Code
-AutoHopBtn.TextSize = 14
-AutoHopBtn.Parent = Frame
+local function SetProgress(ratio)
+    TweenService:Create(LoadingBar, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
+    }):Play()
+end
 
--- ЧЕК СТРОНГХОЛДА
+-- Лог-консоль для вывода ошибок
+local LogFrame = Instance.new("ScrollingFrame")
+LogFrame.Size = UDim2.new(1, -20, 0, 50)
+LogFrame.Position = UDim2.new(0, 10, 0, 45)
+LogFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+LogFrame.BorderSizePixel = 0
+LogFrame.ScrollBarThickness = 2
+LogFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+LogFrame.Parent = Main
+Instance.new("UICorner", LogFrame).CornerRadius = UDim.new(0, 6)
+
+local LogText = Instance.new("TextLabel")
+LogText.Size = UDim2.new(1, -10, 1, 0)
+LogText.Position = UDim2.new(0, 5, 0, 0)
+LogText.BackgroundTransparency = 1
+LogText.TextColor3 = Color3.fromRGB(0, 255, 180)
+LogText.Font = Enum.Font.Code
+LogText.TextSize = 11
+LogText.TextXAlignment = Enum.TextXAlignment.Left
+LogText.TextYAlignment = Enum.TextYAlignment.Top
+LogText.TextWrapped = true
+LogText.Text = "[SYS] Готов к работе..."
+LogText.Parent = LogFrame
+
+local function AddLog(msg, isErr)
+    local col = isErr and "FF4444" or "00FFC8"
+    LogText.Text = string.format("[%s] %s\n", os.date("%X"), msg) .. LogText.Text
+    if isErr then
+        Title.TextColor3 = Color3.fromRGB(255, 70, 70)
+    else
+        Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end
+
+-- Кнопки-генераторы
+local function CreateNeonButton(name, text, posY, color)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(1, -20, 0, 36)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    btn.TextColor3 = color
+    btn.Text = text
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 13
+    btn.AutoButtonColor = false
+    btn.Parent = Main
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = color
+    stroke.Thickness = 1
+    
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 35)}):Play()
+    end)
+    return btn, stroke
+end
+
+local CheckBtn, _ = CreateNeonButton("CheckBtn", "1. Проверить Стронгхолд", 105, Color3.fromRGB(255, 255, 255))
+local TpBtn, _ = CreateNeonButton("TpBtn", "2. Телепорт к сундуку", 150, Color3.fromRGB(255, 255, 255))
+local AutoHopBtn, HopStroke = CreateNeonButton("AutoHopBtn", getgenv().AutoHopEnabled and "3. Авто-Хоп: ВКЛ" or "3. Авто-Хоп: ВЫКЛ", 195, getgenv().AutoHopEnabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 70, 100))
+local DumpBtn, _ = CreateNeonButton("DumpBtn", "4. Копировать лог ошибок", 240, Color3.fromRGB(200, 150, 255))
+
+-- ФУНКЦИЯ ПОИСКА
 local function CheckStronghold()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then
@@ -75,19 +145,19 @@ local function CheckStronghold()
     return nil
 end
 
--- СЕРВЕР ХОП
+-- АВТО-ХОП С ОБРАБОТКОЙ ОШИБОК И ФОЛЛБЭКОМ
 local isHopping = false
 local function ServerHop()
     if isHopping then return end
     isHopping = true
-    Title.Text = " Ищу сервер..."
+    SetProgress(0.2)
+    AddLog("Старт поиска сервера...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
     local cursor = ""
     local found = false
 
-    -- Очередь для перезапуска скрипта при прыжке
     local q_on_tp = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
     if q_on_tp then
         pcall(function()
@@ -99,69 +169,79 @@ local function ServerHop()
         end)
     end
 
-    -- Перебор серверов через ропрокси и обычный домен
-    for attempt = 1, 5 do
-        local raw = nil
-        local urlProxy = "https://games.roproxy.com/v1/games/" .. tostring(placeId) .. "/servers/Public?limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
-        local urlDirect = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
+    local endpoints = {
+        "https://games.roproxy.com/v1/games/%s/servers/Public?limit=100",
+        "https://games.roblox.com/v1/games/%s/servers/Public?limit=100"
+    }
 
-        -- Пробуем через прокси
-        local s, res = pcall(function() return game:HttpGet(urlProxy) end)
-        if s and res and not string.find(res, "errors") then
-            raw = res
-        else
-            -- Фоллбэк напрямую
-            local s2, res2 = pcall(function() return game:HttpGet(urlDirect) end)
-            if s2 and res2 then raw = res2 end
-        end
+    for idx, baseUri in ipairs(endpoints) do
+        AddLog("Запрос через Endpoint #" .. tostring(idx))
+        SetProgress(0.4 + (idx * 0.2))
 
-        if raw then
-            local decSuccess, data = pcall(function() return HttpService:JSONDecode(raw) end)
-            if decSuccess and data and data.data then
+        local uri = string.format(baseUri, tostring(placeId))
+        local reqOk, raw = pcall(function() return game:HttpGet(uri) end)
+
+        if not reqOk then
+            AddLog("HttpGet Err: " .. tostring(raw):sub(1, 35), true)
+        elseif raw and raw ~= "" then
+            local decOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if not decOk then
+                AddLog("JSON Parse Err: " .. tostring(data):sub(1, 30), true)
+            elseif data and data.data then
                 for _, srv in ipairs(data.data) do
                     if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
-                        Title.Text = " Прыгаем на " .. tostring(srv.playing) .. " игроков..."
-                        local tpSuccess = pcall(function()
+                        AddLog("Найден сервер! Прыжок...")
+                        SetProgress(1.0)
+                        local tpOk, tpErr = pcall(function()
                             TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
                         end)
-                        if tpSuccess then
+                        if tpOk then
                             found = true
                             return
+                        else
+                            AddLog("TP Error: " .. tostring(tpErr):sub(1, 30), true)
                         end
                     end
                 end
-
-                if data.nextPageCursor then
-                    cursor = data.nextPageCursor
-                else
-                    cursor = ""
-                end
+            elseif data and data.errors then
+                AddLog("API Err: " .. tostring(data.errors[1] and data.errors[1].message or "Unknown"), true)
             end
         end
-        task.wait(1.5)
+        task.wait(1)
     end
 
+    -- ФОЛЛБЭК: Если API на эмуляторе заблокировано
     if not found then
-        isHopping = false
-        Title.Text = " Лимит API. Ретрай через 5с..."
-        task.wait(5)
-        ServerHop()
+        AddLog("API недоступно. Фоллбэк ТП...", true)
+        SetProgress(0.8)
+        task.wait(1.5)
+        local fbOk, fbErr = pcall(function()
+            TeleportService:Teleport(placeId, LocalPlayer)
+        end)
+        if not fbOk then
+            AddLog("Fallback Err: " .. tostring(fbErr):sub(1, 30), true)
+            isHopping = false
+            SetProgress(0)
+        end
     end
 end
 
--- КНОПКИ
+-- ОБРАБОТЧИКИ КНОПОК
 CheckBtn.MouseButton1Click:Connect(function()
+    AddLog("Проверка карты...")
     local target = CheckStronghold()
     if target then
-        CheckBtn.Text = "НАЙДЕН!"
-        CheckBtn.TextColor3 = Color3.fromRGB(50, 255, 50)
+        CheckBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+        CheckBtn.Text = "★ СТРОНГХОЛД НАЙДЕН!"
+        AddLog("Стронгхолд обнаружен!")
     else
-        CheckBtn.Text = "НЕТ НА СЕРВЕРЕ"
-        CheckBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+        CheckBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+        CheckBtn.Text = "НЕТ НА КАРТЕ"
+        AddLog("Стронгхолд отсутствует.")
     end
     task.wait(2)
-    CheckBtn.Text = "1. Проверить сервер"
     CheckBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CheckBtn.Text = "1. Проверить Стронгхолд"
 end)
 
 TpBtn.MouseButton1Click:Connect(function()
@@ -171,52 +251,68 @@ TpBtn.MouseButton1Click:Connect(function()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if hrp then
             local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.CFrame or target:GetPivot()) or target.CFrame
-            if pos then hrp.CFrame = pos end
+            if pos then 
+                hrp.CFrame = pos 
+                AddLog("Успешный ТП к сундуку!")
+            end
         end
+    else
+        AddLog("Не к чему ТПшиться!", true)
     end
 end)
 
 AutoHopBtn.MouseButton1Click:Connect(function()
     getgenv().AutoHopEnabled = not getgenv().AutoHopEnabled
     if getgenv().AutoHopEnabled then
-        AutoHopBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+        AutoHopBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+        HopStroke.Color = Color3.fromRGB(0, 255, 150)
         AutoHopBtn.Text = "3. Авто-Хоп: ВКЛ"
+        AddLog("Авто-хоп активирован")
         task.spawn(function()
             local target = CheckStronghold()
             if target then
                 getgenv().AutoHopEnabled = false
-                AutoHopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-                AutoHopBtn.Text = "НАЙДЕН! СТОП"
-                Title.Text = " Стронгхолд тут!"
+                AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
+                HopStroke.Color = Color3.fromRGB(255, 70, 100)
+                AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
+                AddLog("Найдено на этом сервере!")
             else
                 ServerHop()
             end
         end)
     else
-        AutoHopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
+        HopStroke.Color = Color3.fromRGB(255, 70, 100)
         AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
-        Title.Text = " Mobile Sec-Panel | 99 Nights"
+        SetProgress(0)
+        AddLog("Авто-хоп отключен")
     end
 end)
 
--- АВТО-ПРОВЕРКА ПРИ ЗАГРУЗКЕ
+DumpBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(LogText.Text)
+        AddLog("Логи скопированы в буфер!")
+    else
+        AddLog("Clipboard не поддерживается", true)
+    end
+end)
+
+-- ПРОВЕРКА ПРИ ЗАГРУЗКЕ
 if getgenv().AutoHopEnabled then
     task.spawn(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
+        SetProgress(0.5)
+        AddLog("Загрузка мира... ждем 4с")
         task.wait(4)
         local target = CheckStronghold()
         if target then
             getgenv().AutoHopEnabled = false
-            AutoHopBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-            AutoHopBtn.Text = "НАЙДЕН! СТОП"
-            Title.Text = " Стронгхолд тут!"
-            
-            local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            local hrp = char:WaitForChild("HumanoidRootPart", 5)
-            if hrp then
-                local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.CFrame or target:GetPivot()) or target.CFrame
-                if pos then hrp.CFrame = pos end
-            end
+            AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
+            HopStroke.Color = Color3.fromRGB(255, 70, 100)
+            AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
+            AddLog("СТРОНГХОЛД НАЙДЕН!")
+            SetProgress(1.0)
         else
             ServerHop()
         end
