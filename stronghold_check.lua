@@ -17,9 +17,8 @@ ScreenGui.ResetOnSpawn = false
 local success = pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- Главный Неоновый Фрейм
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 320)
+Main.Size = UDim2.new(0, 280, 0, 360)
 Main.Position = UDim2.new(0.5, -140, 0.2, 0)
 Main.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 Main.BorderSizePixel = 0
@@ -85,11 +84,10 @@ LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Ядро обновлено. CORS Bypass."
+LogText.Text = "[SYS] Ядро: API CodeTabs..."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
-    local col = isErr and "FF4444" or "00FFC8"
     LogText.Text = string.format("[%s] %s\n", os.date("%X"), msg) .. LogText.Text
     if isErr then
         Title.TextColor3 = Color3.fromRGB(255, 70, 70)
@@ -128,7 +126,8 @@ end
 local CheckBtn, _ = CreateNeonButton("CheckBtn", "1. Проверить Стронгхолд", 105, Color3.fromRGB(255, 255, 255))
 local TpBtn, _ = CreateNeonButton("TpBtn", "2. Телепорт к сундуку", 150, Color3.fromRGB(255, 255, 255))
 local AutoHopBtn, HopStroke = CreateNeonButton("AutoHopBtn", getgenv().AutoHopEnabled and "3. Авто-Хоп: ВКЛ" or "3. Авто-Хоп: ВЫКЛ", 195, getgenv().AutoHopEnabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 70, 100))
-local DumpBtn, _ = CreateNeonButton("DumpBtn", "4. Копировать лог ошибок", 240, Color3.fromRGB(200, 150, 255))
+local ReserveHopBtn, _ = CreateNeonButton("ReserveHopBtn", "РЕЗЕРВНЫЙ СЕРВЕР-ХОП (ПЛАН Б)", 240, Color3.fromRGB(255, 150, 50))
+local DumpBtn, _ = CreateNeonButton("DumpBtn", "Копировать лог ошибок", 285, Color3.fromRGB(200, 150, 255))
 
 local function CheckStronghold()
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -141,38 +140,33 @@ end
 
 local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
-local function FetchServers(targetUrl)
+-- ОБХОД ЧЕРЕЗ CODETABS
+local function FetchCodeTabs(cursor)
     if not executor_request then return false, "No Request Func" end
     
-    local urlEncoded = HttpService:UrlEncode(targetUrl)
-    
-    -- Мощные CORS прокси, которые плюют на Cloudflare
-    local bypassEndpoints = {
-        "https://api.allorigins.win/raw?url=" .. urlEncoded,
-        "https://corsproxy.io/?" .. urlEncoded
-    }
-    
-    for i, endpoint in ipairs(bypassEndpoints) do
-        AddLog(string.format("CORS Bypass #%d...", i))
-        local success, res = pcall(function()
-            return executor_request({
-                Url = endpoint,
-                Method = "GET",
-                Headers = {
-                    ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                }
-            })
-        end)
-        
-        if success and res and res.StatusCode == 200 then
-            return true, res.Body
-        else
-            AddLog(string.format("CORS #%d fail: HTTP %s", i, tostring(res and res.StatusCode or "nil")), true)
-        end
-        task.wait(1)
+    local targetRobloxUrl = "https://games.roblox.com/v1/games/"..tostring(game.PlaceId).."/servers/Public?limit=100"
+    if cursor and cursor ~= "" then
+        targetRobloxUrl = targetRobloxUrl .. "&cursor=" .. cursor
     end
     
-    return false, "Все CORS прокси мертвы"
+    -- Codetabs просто берет и возвращает текст сайта, игнорируя всё
+    local proxyUrl = "https://api.codetabs.com/v1/proxy?quest=" .. targetRobloxUrl
+    
+    local success, res = pcall(function()
+        return executor_request({
+            Url = proxyUrl,
+            Method = "GET"
+        })
+    end)
+    
+    if success and res then
+        if res.StatusCode == 200 then
+            return true, res.Body
+        else
+            return false, "HTTP " .. tostring(res.StatusCode)
+        end
+    end
+    return false, "Сбой сети"
 end
 
 local isHopping = false
@@ -180,7 +174,7 @@ local function ServerHop()
     if isHopping then return end
     isHopping = true
     SetProgress(0.2)
-    AddLog("Ищем сервер через AllOrigins...")
+    AddLog("Ищем через CodeTabs...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
@@ -200,14 +194,13 @@ local function ServerHop()
 
     while not found and getgenv().AutoHopEnabled do
         SetProgress(0.5)
-        local targetUrl = string.format("https://games.roblox.com/v1/games/%s/servers/Public?limit=100&cursor=%s", tostring(placeId), cursor)
-        
-        local reqOk, rawOrErr = FetchServers(targetUrl)
+        local reqOk, rawOrErr = FetchCodeTabs(cursor)
 
         if not reqOk then
-            AddLog("Сбой сети! Ждем 5с...", true)
+            AddLog("Ошибка API: " .. tostring(rawOrErr), true)
+            AddLog("Ждем 3с...", true)
             SetProgress(0)
-            task.wait(5)
+            task.wait(3)
         else
             local decOk, data = pcall(function() return HttpService:JSONDecode(rawOrErr) end)
             if decOk and data and data.data then
@@ -227,14 +220,13 @@ local function ServerHop()
                 
                 if data.nextPageCursor then
                     cursor = data.nextPageCursor
-                    AddLog("Читаем следующую страницу...")
                 else
                     cursor = ""
                 end
             else
-                AddLog("Ошибка парсинга JSON", true)
+                AddLog("Парсинг JSON провален", true)
             end
-            task.wait(3) 
+            task.wait(2) 
         end
     end
 
@@ -244,17 +236,18 @@ local function ServerHop()
     end
 end
 
+-- КНОПКИ
 CheckBtn.MouseButton1Click:Connect(function()
     AddLog("Проверка карты...")
     local target = CheckStronghold()
     if target then
         CheckBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
         CheckBtn.Text = "★ СТРОНГХОЛД НАЙДЕН!"
-        AddLog("Стронгхолд обнаружен!")
+        AddLog("Найдено!")
     else
         CheckBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
         CheckBtn.Text = "НЕТ НА КАРТЕ"
-        AddLog("Стронгхолд отсутствует.")
+        AddLog("Отсутствует.")
     end
     task.wait(2)
     CheckBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -270,7 +263,7 @@ TpBtn.MouseButton1Click:Connect(function()
             local pos = target:IsA("Model") and (target.PrimaryPart and target.PrimaryPart.CFrame or target:GetPivot()) or target.CFrame
             if pos then 
                 hrp.CFrame = pos 
-                AddLog("Успешный ТП к сундуку!")
+                AddLog("Успешный ТП!")
             end
         end
     else
@@ -284,7 +277,7 @@ AutoHopBtn.MouseButton1Click:Connect(function()
         AutoHopBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
         HopStroke.Color = Color3.fromRGB(0, 255, 150)
         AutoHopBtn.Text = "3. Авто-Хоп: ВКЛ"
-        AddLog("Авто-хоп активирован")
+        AddLog("Авто-хоп включен")
         task.spawn(function()
             local target = CheckStronghold()
             if target then
@@ -292,7 +285,6 @@ AutoHopBtn.MouseButton1Click:Connect(function()
                 AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
                 HopStroke.Color = Color3.fromRGB(255, 70, 100)
                 AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
-                AddLog("Найдено на этом сервере!")
             else
                 ServerHop()
             end
@@ -301,26 +293,29 @@ AutoHopBtn.MouseButton1Click:Connect(function()
         AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
         HopStroke.Color = Color3.fromRGB(255, 70, 100)
         AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
-        SetProgress(0)
         isHopping = false
         AddLog("Авто-хоп отключен")
     end
 end)
 
+-- РЕЗЕРВНЫЙ ХОП (ПЛАН Б)
+ReserveHopBtn.MouseButton1Click:Connect(function()
+    AddLog("ЗАПУСК СТОРОННЕГО СКРИПТА ХОПА!")
+    ReserveHopBtn.Text = "ПЕРЕХОДИМ..."
+    task.wait(1)
+    local s, err = pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Infinite-Store/Infinite-Store/main/main.lua"))()
+    end)
+    if not s then AddLog("И он тоже сломан: " .. tostring(err):sub(1,30), true) end
+end)
+
 DumpBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(LogText.Text)
-        AddLog("Логи скопированы в буфер!")
-    else
-        AddLog("Clipboard не поддерживается", true)
-    end
+    if setclipboard then setclipboard(LogText.Text) AddLog("Лог скопирован!") end
 end)
 
 if getgenv().AutoHopEnabled then
     task.spawn(function()
         if not game:IsLoaded() then game.Loaded:Wait() end
-        SetProgress(0.5)
-        AddLog("Загрузка мира... ждем 4с")
         task.wait(4)
         local target = CheckStronghold()
         if target then
@@ -328,8 +323,6 @@ if getgenv().AutoHopEnabled then
             AutoHopBtn.TextColor3 = Color3.fromRGB(255, 70, 100)
             HopStroke.Color = Color3.fromRGB(255, 70, 100)
             AutoHopBtn.Text = "3. Авто-Хоп: ВЫКЛ"
-            AddLog("СТРОНГХОЛД НАЙДЕН!")
-            SetProgress(1.0)
         else
             ServerHop()
         end
