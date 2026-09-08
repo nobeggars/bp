@@ -89,7 +89,7 @@ LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Ядро переписано. Готов..."
+LogText.Text = "[SYS] Анти-Рейтлимит включен..."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -149,36 +149,35 @@ end
 local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 
 local function FetchServers(url)
-    if executor_request then
-        local success, res = pcall(function()
-            return executor_request({
-                Url = url,
-                Method = "GET"
-            })
-        end)
-        if success and res then
-            if res.StatusCode == 200 then
-                return true, res.Body
-            else
-                return false, "HTTP " .. tostring(res.StatusCode)
-            end
+    if not executor_request then
+        return false, "Executor missing request func"
+    end
+    
+    local success, res = pcall(function()
+        return executor_request({
+            Url = url,
+            Method = "GET"
+        })
+    end)
+    
+    if success and res then
+        if res.StatusCode == 200 then
+            return true, res.Body
         else
-            return false, "Request throw: " .. tostring(res)
+            return false, tostring(res.StatusCode)
         end
     else
-        -- Фоллбэк только если вообще нет функции request (крайний случай)
-        local success, res = pcall(function() return game:HttpGet(url) end)
-        if success then return true, res else return false, "HttpGet err: " .. tostring(res) end
+        return false, "nil"
     end
 end
 
--- АВТО-ХОП БЕЗ КРИВЫХ ФОЛЛБЭКОВ
+-- АВТО-ХОП С ОБХОДОМ РЕЙТЛИМИТА (429)
 local isHopping = false
 local function ServerHop()
     if isHopping then return end
     isHopping = true
     SetProgress(0.2)
-    AddLog("Старт поиска (Request API)...")
+    AddLog("Ищем свободный сервер...")
 
     local placeId = game.PlaceId
     local currentJob = game.JobId
@@ -196,60 +195,71 @@ local function ServerHop()
         end)
     end
 
+    -- Массив прокси. Прямой роблокс убрали, так как он крашит на эмуляторах.
     local endpoints = {
-        "https://games.roproxy.com/v1/games/%s/servers/Public?limit=100",
-        "https://games.roblox.com/v1/games/%s/servers/Public?limit=100"
+        "https://games.roproxy.com/v1/games/%s/servers/Public?limit=100&cursor=%s",
+        "https://roproxy.com/v1/games/%s/servers/Public?limit=100&cursor=%s"
     }
 
-    for attempt = 1, 3 do
-        if found then break end
+    local currentEndpoint = 1
+    local retries = 0
+
+    while not found and getgenv().AutoHopEnabled do
+        local baseUri = endpoints[currentEndpoint]
+        local uri = string.format(baseUri, tostring(placeId), cursor)
         
-        for idx, baseUri in ipairs(endpoints) do
-            AddLog("Чек Endpoint #" .. tostring(idx))
-            SetProgress(0.4 + (idx * 0.1))
+        SetProgress(0.5)
+        AddLog(string.format("Запрос (Proxy #%d)...", currentEndpoint))
+        
+        local reqOk, rawOrErr = FetchServers(uri)
 
-            local uri = string.format(baseUri, tostring(placeId))
-            local reqOk, raw = FetchServers(uri)
-
-            if not reqOk then
-                AddLog("Req Err: " .. tostring(raw):sub(1, 35), true)
-            elseif raw and raw ~= "" then
-                local decOk, data = pcall(function() return HttpService:JSONDecode(raw) end)
-                if not decOk then
-                    AddLog("JSON Parse Err", true)
-                elseif data and data.data then
-                    for _, srv in ipairs(data.data) do
-                        if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
-                            AddLog("Сервер найден! ТП...")
-                            SetProgress(1.0)
-                            local tpOk, tpErr = pcall(function()
-                                TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
-                            end)
-                            if tpOk then
-                                found = true
-                                return
-                            else
-                                AddLog("TP 773/Err: " .. tostring(tpErr):sub(1, 30), true)
-                            end
+        if not reqOk then
+            AddLog("Ошибка API: HTTP " .. tostring(rawOrErr), true)
+            
+            if tostring(rawOrErr) == "429" then
+                -- Если поймали 429, меняем прокси и ждем дольше
+                retries = retries + 1
+                currentEndpoint = currentEndpoint == 1 and 2 or 1
+                local waitTime = 5 + (retries * 2) -- Экспоненциальный бэкофф
+                AddLog("Рейтлимит! Ждем " .. waitTime .. "с...", true)
+                SetProgress(0)
+                task.wait(waitTime)
+            else
+                -- Другая ошибка или nil (прокси лег)
+                currentEndpoint = currentEndpoint == 1 and 2 or 1
+                task.wait(3)
+            end
+        else
+            -- Успешный запрос
+            retries = 0 
+            local decOk, data = pcall(function() return HttpService:JSONDecode(rawOrErr) end)
+            if decOk and data and data.data then
+                for _, srv in ipairs(data.data) do
+                    if srv.id ~= currentJob and srv.playing and srv.maxPlayers and (srv.playing < srv.maxPlayers) then
+                        AddLog("Сервер найден! ТП...")
+                        SetProgress(1.0)
+                        local tpOk = pcall(function()
+                            TeleportService:TeleportToPlaceInstance(placeId, srv.id, LocalPlayer)
+                        end)
+                        if tpOk then
+                            found = true
+                            return
                         end
                     end
-                elseif data and data.errors then
-                    AddLog("API Err: " .. tostring(data.errors[1] and data.errors[1].message or "Unknown"), true)
+                end
+                
+                if data.nextPageCursor then
+                    cursor = data.nextPageCursor
+                    AddLog("Читаем следующую страницу...")
                 end
             end
-            task.wait(1.5)
+            task.wait(2) -- Пауза между успешными запросами, чтобы не ловить 429
         end
     end
 
     if not found then
-        AddLog("Сервер не найден! Ждем 5с...", true)
-        SetProgress(0)
         isHopping = false
-        task.wait(5)
-        -- Ретрай нормального поиска, без кривого Teleport(placeId)!
-        if getgenv().AutoHopEnabled then
-            ServerHop()
-        end
+        SetProgress(0)
     end
 end
 
@@ -345,3 +355,4 @@ if getgenv().AutoHopEnabled then
         end
     end)
 end
+
