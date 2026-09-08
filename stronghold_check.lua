@@ -335,4 +335,3 @@ if getgenv().AutoHopEnabled then
         end
     end)
 end
-
