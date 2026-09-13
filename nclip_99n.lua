@@ -6,27 +6,18 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 
-local uiName = "GhostWare_99Nights"
+local uiName = "Voidware_GhostHunter"
 
 -- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-getgenv().Noclip = false
-getgenv().AntiTP = false
-getgenv().AutoUnderground = false
-local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local Camera = workspace.CurrentCamera
+local flyNoclipEnabled = false
+local antiTpEnabled = false
+local espEnabled = false
+local scanEnabled = false
 
-local uiName = "GhostWare_Mobile_V2"
-
--- Глобалки
-getgenv().Noclip = false
-getgenv().AntiTP = false
-getgenv().ESP = false
-getgenv().ScanActive = false
-getgenv().FlySpeed = 50
+local savedPos = nil
+local savedCF = nil
+local AntiTpConn = nil
+local espObjects = {}
 
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
@@ -34,247 +25,319 @@ if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiNam
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = uiName
 ScreenGui.ResetOnSpawn = false
-pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local success = pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
+if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- Главный Фрейм
+-- Главный Фрейм (Voidware Style)
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 320, 0, 340)
-Main.Position = UDim2.new(0.5, -160, 0.2, 0)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+Main.Size = UDim2.new(0, 420, 0, 280)
+Main.Position = UDim2.new(0.5, -210, 0.2, 0)
+Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
 Main.Parent = ScreenGui
-
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 local UIStroke = Instance.new("UIStroke", Main)
-UIStroke.Thickness = 2
-UIStroke.Color = Color3.fromRGB(150, 0, 255)
-UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UIStroke.Thickness = 1
+UIStroke.Color = Color3.fromRGB(30, 45, 40)
+
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 140, 1, 0)
+Sidebar.BackgroundColor3 = Color3.fromRGB(16, 20, 20)
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Main
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
+
+local Divider = Instance.new("Frame")
+Divider.Size = UDim2.new(0, 10, 1, 0)
+Divider.Position = UDim2.new(1, -5, 0, 0)
+Divider.BackgroundColor3 = Color3.fromRGB(16, 20, 20)
+Divider.BorderSizePixel = 0
+Divider.Parent = Sidebar
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
-Title.Text = "★ GHOSTWARE MOBILE ★"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Position = UDim2.new(0, 10, 0, 10)
+Title.Text = "GhostWare\nUnderground"
+Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 15
+Title.TextSize = 13
+Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.BackgroundTransparency = 1
-Title.Parent = Main
+Title.Parent = Sidebar
 
 local LogFrame = Instance.new("ScrollingFrame")
-LogFrame.Size = UDim2.new(1, -20, 0, 60)
-LogFrame.Position = UDim2.new(0, 10, 0, 45)
-LogFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+LogFrame.Size = UDim2.new(1, -20, 1, -80)
+LogFrame.Position = UDim2.new(0, 10, 0, 70)
+LogFrame.BackgroundColor3 = Color3.fromRGB(10, 12, 12)
 LogFrame.BorderSizePixel = 0
-LogFrame.ScrollBarThickness = 2
-LogFrame.Parent = Main
+LogFrame.ScrollBarThickness = 1
+LogFrame.Parent = Sidebar
 Instance.new("UICorner", LogFrame).CornerRadius = UDim.new(0, 6)
 
 local LogText = Instance.new("TextLabel")
-LogText.Size = UDim2.new(1, -10, 1, 0)
-LogText.Position = UDim2.new(0, 5, 0, 0)
+LogText.Size = UDim2.new(1, -5, 1, 0)
+LogText.Position = UDim2.new(0, 2, 0, 0)
 LogText.BackgroundTransparency = 1
-LogText.TextColor3 = Color3.fromRGB(150, 0, 255)
+LogText.TextColor3 = Color3.fromRGB(150, 170, 160)
 LogText.Font = Enum.Font.Code
-LogText.TextSize = 11
+LogText.TextSize = 10
 LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
-LogText.Text = "[SYS] Дипсик попущен. Ядро запущено..."
+LogText.Text = "> Ядро загружено.\n> Код Бина + Дипсика."
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
-    local color = isErr and '<font color="rgb(255,70,70)">' or '<font color="rgb(150,0,255)">'
+    local color = isErr and '<font color="rgb(255,80,80)">' or '<font color="rgb(0,200,120)">'
     LogText.RichText = true
     LogText.Text = string.format("%s[%s] %s</font>\n", color, os.date("%X"), msg) .. LogText.Text
 end
 
-local function CreateBtn(name, text, posY, color)
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, -150, 1, -20)
+Content.Position = UDim2.new(0, 150, 0, 10)
+Content.BackgroundTransparency = 1
+Content.Parent = Main
+
+local UIListLayout = Instance.new("UIListLayout", Content)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+local function CreateVoidToggle(name, text)
     local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.new(1, -20, 0, 36)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    btn.TextColor3 = color
-    btn.Text = text
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Text = "    " .. text
     btn.Font = Enum.Font.GothamMedium
     btn.TextSize = 13
+    btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.AutoButtonColor = false
-    btn.Parent = Main
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    local stroke = Instance.new("UIStroke", btn)
-    stroke.Color = color
-    stroke.Thickness = 1
-    return btn, stroke
+    btn.Parent = Content
+    
+    local Indicator = Instance.new("Frame")
+    Indicator.Size = UDim2.new(0, 4, 0, 16)
+    Indicator.Position = UDim2.new(0, 0, 0.5, -8)
+    Indicator.BackgroundColor3 = Color3.fromRGB(40, 45, 45)
+    Indicator.BorderSizePixel = 0
+    Indicator.Parent = btn
+    Instance.new("UICorner", Indicator).CornerRadius = UDim.new(1, 0)
+    
+    btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 22, 25)}):Play() end)
+    btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(12, 14, 15)}):Play() end)
+    
+    return btn, Indicator
 end
 
-local AntiTpBtn, AntiTpStroke = CreateBtn("AntiTP", "1. ANTI-TP (Удалить барьеры)", 115, Color3.fromRGB(200, 200, 200))
-local NoclipBtn, NoclipStroke = CreateBtn("Noclip", "2. FLY & NOCLIP (Мобильный)", 160, Color3.fromRGB(200, 200, 200))
-local EspBtn, EspStroke = CreateBtn("ESP", "3. ESP (Неон-Подсветка)", 205, Color3.fromRGB(200, 200, 200))
-local ScanBtn, ScanStroke = CreateBtn("Scan", "4. ИСКАТЬ СТРОНГХОЛД ПОД КАРТОЙ", 250, Color3.fromRGB(255, 100, 100))
-local StopBtn, _ = CreateBtn("Stop", "АВАРИЙНЫЙ СТОП (Сбросить Fly)", 295, Color3.fromRGB(255, 50, 50))
+local AntiTpBtn, AntiTpInd = CreateVoidToggle("AntiTP", "1. Anti-TP (Dipsik Base)")
+local FlyBtn, FlyInd = CreateVoidToggle("Fly", "2. Fly & Noclip")
+local EspBtn, EspInd = CreateVoidToggle("ESP", "3. ESP (Stronghold/Chests)")
+local ScanBtn, ScanInd = CreateVoidToggle("Scan", "4. ПОИСК ПОД КАРТОЙ (Bin Core)")
 
--- 1. АНТИ-ТП
-local AntiTpConn
+-- ХЕЛПЕРЫ
+local function getHRP()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- 1. ANTI-TP (КОПИЯ ДИПСИКА С УЛУЧШЕНИЯМИ)
 AntiTpBtn.MouseButton1Click:Connect(function()
-    getgenv().AntiTP = not getgenv().AntiTP
-    if getgenv().AntiTP then
-        AntiTpBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
-        AntiTpStroke.Color = Color3.fromRGB(0, 255, 150)
-        AddLog("Анти-ТП включен. Режу триггеры...")
+    antiTpEnabled = not antiTpEnabled
+    if antiTpEnabled then
+        TweenService:Create(AntiTpInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        AddLog("Anti-TP включен!")
         
-        -- Постоянно удаляем зоны телепорта, чтобы не выкинуло из-под текстур
-        AntiTpConn = RunService.Stepped:Connect(function()
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("TouchTransmitter") and not obj:IsDescendantOf(LocalPlayer.Character) then
-                    obj:Destroy()
-                end
+        local hrp = getHRP()
+        if hrp then
+            savedPos = hrp.Position
+            savedCF = hrp.CFrame
+        end
+        
+        AntiTpConn = RunService.Heartbeat:Connect(function()
+            local h = getHRP()
+            if not h then return end
+            -- Если мы летим сканером, не блочим ТП
+            if scanEnabled then
+                savedCF = h.CFrame
+                savedPos = h.Position
+                return
+            end
+            
+            local dist = (h.Position - savedPos).Magnitude
+            if dist > 150 then -- Если откинуло далеко - возвращаем
+                h.CFrame = savedCF
+                AddLog("Телепорт заблокирован!", true)
+            else
+                savedCF = h.CFrame
+                savedPos = h.Position
             end
         end)
     else
-        AntiTpBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        AntiTpStroke.Color = Color3.fromRGB(200, 200, 200)
-        AddLog("Анти-ТП отключен.")
-        if AntiTpConn then AntiTpConn:Disconnect() end
+        TweenService:Create(AntiTpInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Anti-TP выключен.")
+        if AntiTpConn then AntiTpConn:Disconnect() AntiTpConn = nil end
     end
 end)
 
--- 2. FLY & NOCLIP ДЛЯ МОБИЛОК (ИДЕАЛЬНЫЙ)
-local FlyBody, FlyGyro, FlyConn, NoclipConn
-
-NoclipBtn.MouseButton1Click:Connect(function()
-    getgenv().Noclip = not getgenv().Noclip
+-- 2. FLY & NOCLIP (Улучшенный Дипсик для мобилок)
+local FlyConn, NoclipConn
+FlyBtn.MouseButton1Click:Connect(function()
+    flyNoclipEnabled = not flyNoclipEnabled
+    local hrp = getHRP()
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
     
-    if getgenv().Noclip and hrp and hum then
-        NoclipBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
-        NoclipStroke.Color = Color3.fromRGB(0, 255, 150)
-        AddLog("Мобильный Fly включен!")
+    if flyNoclipEnabled and hrp then
+        TweenService:Create(FlyInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        AddLog("Fly & Noclip включены!")
         
-        hum.PlatformStand = true
-        
-        FlyBody = Instance.new("BodyVelocity")
-        FlyBody.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        FlyBody.Parent = hrp
-        
-        FlyGyro = Instance.new("BodyGyro")
-        FlyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-        FlyGyro.P = 10000
-        FlyGyro.Parent = hrp
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = true end
         
         FlyConn = RunService.RenderStepped:Connect(function()
-            -- Берем направление с джойстика в мировых координатах. Никакой инверсии!
-            local moveDir = hum.MoveDirection
-            if moveDir.Magnitude > 0 then
-                FlyBody.Velocity = moveDir * getgenv().FlySpeed
-            else
-                FlyBody.Velocity = Vector3.new(0, 0, 0)
+            local h = getHRP()
+            local hm = char:FindFirstChildOfClass("Humanoid")
+            if not h or not hm then return end
+            
+            local move = Vector3.new(0, 0, 0)
+            -- Поддержка ПК
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+            
+            -- Поддержка Мобильного Джойстика
+            local moveDir = hm.MoveDirection
+            if move.Magnitude == 0 and moveDir.Magnitude > 0 then
+                move = (Camera.CFrame.LookVector * moveDir.Z * -1) + (Camera.CFrame.RightVector * moveDir.X)
             end
-            FlyGyro.CFrame = Camera.CFrame
+            
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+            
+            if move.Magnitude > 0 then
+                h.Velocity = move.Unit * 60
+            else
+                h.Velocity = Vector3.new(0, 0, 0)
+            end
         end)
         
-        -- Сквозь стены
         NoclipConn = RunService.Stepped:Connect(function()
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
             end
         end)
     else
-        NoclipBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        NoclipStroke.Color = Color3.fromRGB(200, 200, 200)
-        AddLog("Fly отключен.")
-        if FlyBody then FlyBody:Destroy() end
-        if FlyGyro then FlyGyro:Destroy() end
+        TweenService:Create(FlyInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Fly & Noclip выключены.")
         if FlyConn then FlyConn:Disconnect() end
         if NoclipConn then NoclipConn:Disconnect() end
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then hum.PlatformStand = false end
     end
 end)
 
 -- 3. ESP
-local espObjects = {}
+local function clearESP()
+    for _, obj in ipairs(espObjects) do
+        if obj and obj.Parent then obj:Destroy() end
+    end
+    espObjects = {}
+end
+
+local function createESP(target, color, text)
+    local box = Instance.new("BoxHandleAdornment")
+    box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
+    box.Transparency = 0.5
+    box.Color3 = color
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    box.Adornee = target:IsA("Model") and target.PrimaryPart or target
+    box.Parent = box.Adornee
+    table.insert(espObjects, box)
+
+    local bg = Instance.new("BillboardGui")
+    bg.Size = UDim2.new(0, 200, 0, 50)
+    bg.AlwaysOnTop = true
+    bg.StudsOffset = Vector3.new(0, 3, 0)
+    bg.Adornee = box.Adornee
+    bg.Parent = box.Adornee
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.TextStrokeTransparency = 0
+    label.Parent = bg
+    table.insert(espObjects, bg)
+end
+
 EspBtn.MouseButton1Click:Connect(function()
-    getgenv().ESP = not getgenv().ESP
-    if getgenv().ESP then
-        EspBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
-        EspStroke.Color = Color3.fromRGB(0, 255, 150)
+    espEnabled = not espEnabled
+    if espEnabled then
+        TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
         AddLog("ESP включен.")
-        
         task.spawn(function()
-            while getgenv().ESP do
-                for _, obj in ipairs(espObjects) do if obj then obj:Destroy() end end
-                espObjects = {}
-                
-                for _, item in ipairs(workspace:GetDescendants()) do
-                    if item.Name == "Stronghold" or item.Name == "DiamondChest" then
-                        local hl = Instance.new("Highlight")
-                        hl.Adornee = item:IsA("Model") and item or item.Parent
-                        hl.FillColor = Color3.fromRGB(150, 0, 255)
-                        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        hl.FillTransparency = 0.5
-                        hl.Parent = CoreGui
-                        table.insert(espObjects, hl)
+            while espEnabled do
+                clearESP()
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj.Name == "Stronghold" then
+                        createESP(obj, Color3.fromRGB(255, 0, 255), "★ STRONGHOLD ★")
+                    elseif obj.Name == "DiamondChest" then
+                        createESP(obj, Color3.fromRGB(0, 255, 255), "💎 DIAMOND CHEST 💎")
                     end
                 end
                 task.wait(2)
             end
         end)
     else
-        EspBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        EspStroke.Color = Color3.fromRGB(200, 200, 200)
-        AddLog("ESP отключен.")
-        for _, obj in ipairs(espObjects) do if obj then obj:Destroy() end end
-        espObjects = {}
+        TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("ESP выключен.")
+        clearESP()
     end
 end)
 
--- 4. ПОИСК ПОД КАРТОЙ (С ПРОГРУЗКОЙ ЧАНКОВ)
+-- 4. АВТО-ПОИСК СТРОНГХОЛДА (ЯДРО БИНА)
 ScanBtn.MouseButton1Click:Connect(function()
-    if getgenv().ScanActive then return end
-    getgenv().ScanActive = true
+    if scanEnabled then
+        scanEnabled = false
+        TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Сканирование остановлено.")
+        return
+    end
     
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then getgenv().ScanActive = false return end
+    local hrp = getHRP()
+    if not hrp then return end
     
-    ScanBtn.Text = "СКАНИРУЮ..."
-    ScanBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
-    AddLog("Ухожу под землю. Гружу чанки...")
+    scanEnabled = true
+    TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(200, 0, 150)}):Play()
+    AddLog("Ухожу под землю для скана...")
     
     task.spawn(function()
-        -- Отключаем коллизию и гравитацию на время скана
-        if not getgenv().Noclip then
-            local bp = Instance.new("BodyPosition")
-            bp.MaxForce = Vector3.new(0, 9e9, 0)
-            bp.Position = hrp.Position
-            bp.Name = "ScanHold"
-            bp.Parent = hrp
-        end
-
         local startPos = hrp.Position
-        local depthY = -40 -- Высота под картой
+        local scanY = -150 -- Летаем глубоко под картой
+        
+        -- Спиральный поиск для прогрузки чанков
+        local step = 150
         local radius = 0
         local angle = 0
-        
-        -- Спускаемся
-        hrp.CFrame = CFrame.new(startPos.X, depthY, startPos.Z)
-        task.wait(1)
-        
         local foundTarget = nil
         
-        -- Спиралевидный полет для загрузки карты
-        while getgenv().ScanActive and radius < 2500 do
+        -- Ставим платформу, чтобы не падать во время скана
+        local bp = Instance.new("BodyPosition")
+        bp.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bp.P = 10000
+        bp.Parent = hrp
+        
+        while scanEnabled do
             local x = startPos.X + math.cos(math.rad(angle)) * radius
             local z = startPos.Z + math.sin(math.rad(angle)) * radius
             
-            -- ПЛАВНО перемещаемся, чтобы сервер отдавал чанки
-            if hrp:FindFirstChild("ScanHold") then
-                hrp.ScanHold.Position = Vector3.new(x, depthY, z)
-            end
-            hrp.CFrame = CFrame.new(x, depthY, z)
+            bp.Position = Vector3.new(x, scanY, z)
             
             -- Ищем Стронгхолд
             for _, obj in ipairs(workspace:GetDescendants()) do
@@ -284,37 +347,34 @@ ScanBtn.MouseButton1Click:Connect(function()
                 end
             end
             
-            if foundTarget then break end
+            if foundTarget then
+                AddLog("СТРОНГХОЛД НАЙДЕН!")
+                local tPos = foundTarget:IsA("Model") and foundTarget:GetPivot().Position or foundTarget.Position
+                
+                -- Зависаем ровно под ним!
+                bp.Position = Vector3.new(tPos.X, tPos.Y - 25, tPos.Z)
+                hrp.CFrame = CFrame.new(bp.Position)
+                
+                if antiTpEnabled then
+                    savedPos = hrp.Position
+                    savedCF = hrp.CFrame
+                end
+                
+                AddLog("Завис под сундуком! Врубай Fly и лутай!")
+                scanEnabled = false
+                break
+            end
             
             angle = angle + 45
             if angle >= 360 then
                 angle = 0
-                radius = radius + 80 -- Расширяем радиус поиска
-                AddLog("Радиус скана: " .. tostring(radius) .. "м")
+                radius = radius + step
+                AddLog("Радиус скана: " .. tostring(radius))
             end
-            task.wait(0.1) -- Время на прогрузку
+            task.wait(0.2)
         end
         
-        if foundTarget then
-            AddLog("СТРОНГХОЛД НАЙДЕН! Зависаю под ним.")
-            local tPos = foundTarget:IsA("Model") and foundTarget:GetPivot() or foundTarget.CFrame
-            hrp.CFrame = tPos * CFrame.new(0, -15, 0) -- Встаем ровно ПОД сундуком
-            if hrp:FindFirstChild("ScanHold") then hrp.ScanHold.Position = hrp.Position end
-            AddLog("Врубай Noclip и плыви вверх за алмазами!")
-        else
-            AddLog("Стронгхолд не найден на сервере.", true)
-            hrp.CFrame = CFrame.new(startPos)
-        end
-        
-        getgenv().ScanActive = false
-        ScanBtn.Text = "4. ИСКАТЬ СТРОНГХОЛД ПОД КАРТОЙ"
-        ScanBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+        if bp then bp:Destroy() end
+        TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
     end)
-end)
-
-StopBtn.MouseButton1Click:Connect(function()
-    getgenv().ScanActive = false
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if hrp and hrp:FindFirstChild("ScanHold") then hrp.ScanHold:Destroy() end
-    AddLog("Аварийная остановка выполнена.", true)
 end)
