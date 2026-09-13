@@ -1,5 +1,5 @@
 --[[
-    GHOSTWARE v3.1 — GRID SCANNER + ANTITP + LOGS
+    GHOSTWARE v3.2 — GRID SCANNER + ANTITP + LOGS
     Author: I.S.-1
     Features:
     - Fly (F)
@@ -10,6 +10,7 @@
     - Stop Scan (Z)
     - TP to Found (Y)
     - Copy Logs (C)
+    - Switch ESP mode: right-click on ESP button
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -42,8 +43,8 @@ local bypassConnection = nil
 local savedPos = nil
 local savedCF = nil
 local highlightObjects = {}
-local espMode = "highlight" -- "highlight" или "box"
-local fullLog = "" -- для сбора логов
+local espMode = "highlight"
+local fullLog = ""
 
 -- ========== CLEANUP ==========
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
@@ -79,7 +80,7 @@ Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 10)
-Title.Text = "GhostWare v3.1\nGrid + Antitp"
+Title.Text = "GhostWare v3.2\nGrid + Antitp"
 Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
@@ -107,14 +108,14 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "> v3.1 загружен.\n"
+LogText.Text = "> v3.2 загружен.\n"
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
     local color = isErr and '<font color="rgb(255,80,80)">' or '<font color="rgb(0,200,120)">'
     local line = string.format("%s[%s] %s</font>\n", color, os.date("%X"), msg)
     LogText.Text = line .. LogText.Text
-    fullLog = fullLog .. line
+    fullLog = fullLog .. line .. "\n"
 end
 
 local Content = Instance.new("Frame")
@@ -228,7 +229,7 @@ RunService.RenderStepped:Connect(function()
     else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ========== 2. ESP (ДВА РЕЖИМА) ==========
+-- ========== 2. ESP ==========
 local function clearESP()
     for _, hl in ipairs(highlightObjects) do
         if hl and hl.Parent then hl:Destroy() end
@@ -246,7 +247,6 @@ local function createESP(target, color, label, big)
     if not adornee then return end
     
     if espMode == "highlight" then
-        -- Highlight — видно сквозь стены
         local hl = Instance.new("Highlight")
         hl.Name = "GhostWareESP"
         hl.Adornee = target
@@ -257,31 +257,7 @@ local function createESP(target, color, label, big)
         hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         hl.Parent = target
         table.insert(highlightObjects, hl)
-        
-        -- Добавляем текст
-        if label then
-            local billboard = Instance.new("BillboardGui")
-            billboard.Size = UDim2.new(0, 200, 0, 50)
-            billboard.AlwaysOnTop = true
-            billboard.MaxDistance = math.huge
-            billboard.StudsOffset = Vector3.new(0, 10, 0)
-            billboard.Adornee = adornee
-            billboard.Parent = adornee
-            
-            local text = Instance.new("TextLabel")
-            text.Size = UDim2.new(1, 0, 1, 0)
-            text.BackgroundTransparency = 1
-            text.Text = label
-            text.TextColor3 = color
-            text.Font = Enum.Font.GothamBlack
-            text.TextSize = big and 16 or 12
-            text.TextStrokeTransparency = 0
-            text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            text.Parent = billboard
-            table.insert(highlightObjects, billboard)
-        end
     else
-        -- BoxHandleAdornment
         local box = Instance.new("BoxHandleAdornment")
         box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
         box.Transparency = 0.6
@@ -291,27 +267,28 @@ local function createESP(target, color, label, big)
         box.Adornee = adornee
         box.Parent = adornee
         table.insert(highlightObjects, box)
+    end
+    
+    if label then
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = math.huge
+        billboard.StudsOffset = Vector3.new(0, 10, 0)
+        billboard.Adornee = adornee
+        billboard.Parent = adornee
         
-        if label then
-            local billboard = Instance.new("BillboardGui")
-            billboard.Size = UDim2.new(0, 200, 0, 50)
-            billboard.AlwaysOnTop = true
-            billboard.MaxDistance = math.huge
-            billboard.StudsOffset = Vector3.new(0, 10, 0)
-            billboard.Adornee = adornee
-            billboard.Parent = adornee
-            
-            local text = Instance.new("TextLabel")
-            text.Size = UDim2.new(1, 0, 1, 0)
-            text.BackgroundTransparency = 1
-            text.Text = label
-            text.TextColor3 = color
-            text.Font = Enum.Font.GothamBlack
-            text.TextSize = big and 16 or 12
-            text.TextStrokeTransparency = 0
-            text.Parent = billboard
-            table.insert(highlightObjects, billboard)
-        end
+        local text = Instance.new("TextLabel")
+        text.Size = UDim2.new(1, 0, 1, 0)
+        text.BackgroundTransparency = 1
+        text.Text = label
+        text.TextColor3 = color
+        text.Font = Enum.Font.GothamBlack
+        text.TextSize = big and 16 or 12
+        text.TextStrokeTransparency = 0
+        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        text.Parent = billboard
+        table.insert(highlightObjects, billboard)
     end
 end
 
@@ -357,11 +334,13 @@ EspBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Переключение режима ESP по правому клику
-EspBtn.MouseButton2Click:Connect(function()
-    espMode = espMode == "highlight" and "box" or "highlight"
-    AddLog("Режим ESP: " .. espMode)
-    if espEnabled then updateESP() end
+-- Смена режима ESP по правому клику (через InputBegan)
+EspBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        espMode = espMode == "highlight" and "box" or "highlight"
+        AddLog("Режим ESP: " .. espMode)
+        if espEnabled then updateESP() end
+    end
 end)
 
 task.spawn(function()
@@ -562,11 +541,5 @@ LogBtn.MouseButton1Click:Connect(function()
     TweenService:Create(LogInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
--- ========== Горячие клавиши ==========
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.H then EspBtn.MouseButton1Click:Fire? EspBtn:Fire? end
-end)
-
-AddLog("GhostWare v3.1 загружен!")
+AddLog("GhostWare v3.2 загружен!")
 AddLog("ЛКМ на ESP, ПКМ — смена режима")
