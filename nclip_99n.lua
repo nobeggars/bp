@@ -1,10 +1,10 @@
 --[[
-    GHOSTWARE v4.4 — FIXED FARM EDITION
-    Author: I.S.-1
+    GHOSTWARE v4.5 — GOD MODE + AUTO-FARM
+    Author: I.S.-1 + Gemini Fix
     Fixes:
-    - AUTO-UPGRADE: ищет ТОЛЬКО "Log" и "MainFire"
-    - KILL AURA: бьёт ТОЛЬКО "Cultist" и "Crossbow Cultist"
-    - Clipboard safe (50 строк)
+    - Auto-Farm: fireproximityprompt для Log, Gas, Fuel, Barrel, Canister
+    - God Mode: Humanoid Physics + ForceField + TouchTransmitter removal
+    - All previous functions
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -34,8 +34,9 @@ local espEnabled = false
 local bypassEnabled = false
 local nightVisionEnabled = false
 local scanEnabled = false
-local autoUpgradeEnabled = false
+local autoFarmEnabled = false
 local killAuraEnabled = false
+local godModeEnabled = false
 local foundObject = nil
 local highlightObjects = {}
 local fullLog = ""
@@ -44,8 +45,9 @@ local espConnections = {}
 local bypassConnection = nil
 local savedPos = nil
 local savedCF = nil
-local autoUpgradeConnection = nil
+local autoFarmConnection = nil
 local killAuraConnection = nil
+local godModeConnection = nil
 local isCollapsed = false
 local logLines = {}
 
@@ -85,7 +87,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.4"
+TitleLabel.Text = "★ GHOSTWARE v4.5"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -166,7 +168,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.4] Загружен.\n"
+LogText.Text = "[v4.5] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -303,6 +305,52 @@ CreateToggle(mainTab, "2. ANTI-TP", function()
         end
     else
         if bypassConnection then bypassConnection:Disconnect() bypassConnection = nil end
+    end
+end)
+
+-- ========== GOD MODE (в MAIN) ==========
+CreateToggle(mainTab, "3. GOD MODE", function()
+    godModeEnabled = not godModeEnabled
+    AddLog("God Mode: " .. (godModeEnabled and "ВКЛ" or "ВЫКЛ"))
+    
+    if godModeEnabled then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        
+        -- ForceField
+        if char and not char:FindFirstChild("GhostGodField") then
+            local ff = Instance.new("ForceField")
+            ff.Name = "GhostGodField"
+            ff.Visible = false
+            ff.Parent = char
+        end
+        
+        -- Удаляем TouchTransmitter
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("TouchTransmitter") then
+                    pcall(function() part:Destroy() end)
+                end
+            end
+        end
+        
+        -- ChangeState Physics
+        if hum then
+            task.spawn(function()
+                while godModeEnabled do
+                    task.wait(0.1)
+                    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if h and h.Health > 0 then
+                        pcall(function() h:ChangeState(Enum.HumanoidStateType.Physics) end)
+                    end
+                end
+            end)
+        end
+    else
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("GhostGodField") then
+            char.GhostGodField:Destroy()
+        end
     end
 end)
 
@@ -500,98 +548,91 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-UPGRADE (ИСПРАВЛЕННЫЙ) ==========
-CreateToggle(farmTab, "1. AUTO-UPGRADE КОСТРА", function()
-    autoUpgradeEnabled = not autoUpgradeEnabled
-    AddLog("Auto-Upgrade: " .. (autoUpgradeEnabled and "ВКЛ" or "ВЫКЛ"))
+-- ========== AUTO-FARM (С fireproximityprompt) ==========
+CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
+    autoFarmEnabled = not autoFarmEnabled
+    AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
     
-    if autoUpgradeEnabled then
+    if autoFarmEnabled then
         task.spawn(function()
-            while autoUpgradeEnabled do
+            while autoFarmEnabled do
                 task.wait(0.5)
                 local hrp = getHRP()
                 if not hrp then continue end
                 
-                -- ===== СОБИРАЕМ ТОЛЬКО LOG =====
-                local logs = {}
-                local items = workspace:FindFirstChild("Items")
-                if items then
-                    for _, obj in ipairs(items:GetChildren()) do
-                        if obj.Name == "Log" then
-                            table.insert(logs, obj)
-                        end
-                    end
+                -- Ищем костёр
+                local mainFire = workspace:FindFirstChild("MainFire", true)
+                if not mainFire then
+                    AddLog("MainFire не найден", true)
+                    task.wait(2)
+                    continue
                 end
                 
-                if #logs > 0 then
-                    AddLog("Найдено Log: " .. #logs)
-                    for i, logObj in ipairs(logs) do
-                        if not autoUpgradeEnabled then break end
-                        if i > 15 then break end
-                        
-                        local pos
-                        if logObj:IsA("Model") then
-                            pos = logObj.PrimaryPart and logObj.PrimaryPart.Position or logObj:GetPivot().Position
-                        else
-                            pos = logObj.Position
+                -- Ищем горючее
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if not autoFarmEnabled then break end
+                    
+                    local n = string.lower(obj.Name)
+                    local isFuel = false
+                    
+                    if (string.find(n, "log") or string.find(n, "gas") or string.find(n, "fuel") or string.find(n, "barrel") or string.find(n, "canister")) and not string.find(n, "stack") then
+                        if obj:IsA("BasePart") or obj:IsA("Model") then
+                            isFuel = true
                         end
-                        
-                        if pos then
-                            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                            task.wait(0.15)
-                            
-                            local prompt = logObj:FindFirstChildOfClass("ProximityPrompt", true)
-                            if prompt then
-                                pcall(function() fireproximityprompt(prompt) end)
-                            elseif logObj:IsA("BasePart") then
-                                pcall(function()
-                                    firetouchinterest(hrp, logObj, 0)
-                                    task.wait(0.05)
-                                    firetouchinterest(hrp, logObj, 1)
-                                end)
-                            end
-                            task.wait(0.15)
-                        end
-                    end
-                end
-                
-                -- ===== ТП К MAIN FIRE =====
-                local mainFire = nil
-                local map = workspace:FindFirstChild("Map")
-                if map then
-                    local cg = map:FindFirstChild("Campground")
-                    if cg then
-                        mainFire = cg:FindFirstChild("MainFire")
-                    end
-                end
-                
-                if mainFire then
-                    local pos
-                    if mainFire:IsA("Model") then
-                        pos = mainFire.PrimaryPart and mainFire.PrimaryPart.Position or mainFire:GetPivot().Position
-                    else
-                        pos = mainFire.Position
                     end
                     
-                    if pos then
-                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                        task.wait(0.3)
+                    if isFuel then
+                        local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true) 
+                                      or (obj.Parent and obj.Parent:FindFirstChildOfClass("ProximityPrompt", true))
                         
-                        local prompt = mainFire:FindFirstChildOfClass("ProximityPrompt", true)
                         if prompt then
-                            pcall(function() fireproximityprompt(prompt) end)
-                            AddLog("Костёр разожжён!")
+                            local pos
+                            if obj:IsA("Model") then
+                                pos = obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position
+                            else
+                                pos = obj.Position
+                            end
+                            
+                            if pos then
+                                -- 1. ТП к предмету
+                                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                                task.wait(0.1)
+                                
+                                -- 2. Собираем
+                                pcall(function() fireproximityprompt(prompt) end)
+                                AddLog("Собран: " .. obj.Name)
+                                task.wait(0.1)
+                                
+                                -- 3. ТП к костру
+                                local firePos
+                                if mainFire:IsA("Model") then
+                                    firePos = mainFire.PrimaryPart and mainFire.PrimaryPart.Position or mainFire:GetPivot().Position
+                                else
+                                    firePos = mainFire.Position
+                                end
+                                
+                                if firePos then
+                                    hrp.CFrame = CFrame.new(firePos + Vector3.new(0, 3, 0))
+                                    task.wait(0.1)
+                                    
+                                    -- 4. Сдаём в костёр
+                                    local firePrompt = mainFire:FindFirstChildOfClass("ProximityPrompt", true)
+                                    if firePrompt then
+                                        pcall(function() fireproximityprompt(firePrompt) end)
+                                        AddLog("Сдан в костёр")
+                                    end
+                                    task.wait(0.2)
+                                end
+                            end
                         end
                     end
-                else
-                    AddLog("MainFire не найден", true)
                 end
             end
         end)
     end
 end)
 
--- ========== KILL AURA (ИСПРАВЛЕННЫЙ) ==========
+-- ========== KILL AURA ==========
 CreateToggle(farmTab, "2. KILL AURA (CULTISTS)", function()
     killAuraEnabled = not killAuraEnabled
     AddLog("Kill Aura: " .. (killAuraEnabled and "ВКЛ" or "ВЫКЛ"))
@@ -608,7 +649,6 @@ CreateToggle(farmTab, "2. KILL AURA (CULTISTS)", function()
             for _, npc in ipairs(chars:GetChildren()) do
                 if npc:IsA("Model") then
                     local name = string.lower(npc.Name)
-                    -- АТАКУЕМ ТОЛЬКО КУЛЬТИСТОВ!
                     if string.find(name, "cultist") then
                         local hum = npc:FindFirstChildOfClass("Humanoid")
                         local npcHRP = npc:FindFirstChild("HumanoidRootPart")
@@ -643,10 +683,10 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         local n = string.lower(obj.Name)
-        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch") or string.find(n, "log")) and not obj:IsA("Bone") then
+        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch") or string.find(n, "log") or string.find(n, "fuel") or string.find(n, "gas")) and not obj:IsA("Bone") then
             woodNames[obj.Name] = (woodNames[obj.Name] or 0) + 1
         end
-        if (string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit") or string.find(n, "bonfire")) and not obj:IsA("Bone") and not string.find(n, "light") and not string.find(n, "particle") then
+        if (string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit")) and not obj:IsA("Bone") and not string.find(n, "light") and not string.find(n, "particle") then
             fireNames[obj.Name] = (fireNames[obj.Name] or 0) + 1
         end
     end
@@ -660,7 +700,7 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
         end
     end
     
-    AddLog("--- ДРОВА ---")
+    AddLog("--- ДРОВА / ГОРЮЧЕЕ ---")
     for name, count in pairs(woodNames) do AddLog("  " .. name .. " (x" .. count .. ")") end
     AddLog("--- КОСТЁР ---")
     for name, count in pairs(fireNames) do AddLog("  " .. name .. " (x" .. count .. ")") end
@@ -745,6 +785,17 @@ RunService.Stepped:Connect(function()
             end
         end
     end
+    
+    -- Поддерживаем God Mode при переспавнах
+    if godModeEnabled then
+        local char = LocalPlayer.Character
+        if char and not char:FindFirstChild("GhostGodField") then
+            local ff = Instance.new("ForceField")
+            ff.Name = "GhostGodField"
+            ff.Visible = false
+            ff.Parent = char
+        end
+    end
 end)
 
 RunService.RenderStepped:Connect(function()
@@ -767,5 +818,6 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v4.4 FIXED загружен!")
-AddLog("Farm → Auto-Upgrade + Kill Aura")
+AddLog("v4.5 GOD MODE + AUTO-FARM загружен!")
+AddLog("MAIN → God Mode")
+AddLog("FARM → Auto-Farm + Kill Aura")
