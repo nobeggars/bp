@@ -1,10 +1,11 @@
 --[[
-    NEON SCANNER v1.1 — CULTIST CAMP HUNTER
+    NEON SCANNER v1.2 — CULTIST CAMP HUNTER + TP
     Author: I.S.-1
     Fixes:
-    - Search for Cultist Camp by keywords, not ChestDEF (it's a Bat Bone!)
-    - Search for building with blue crystal
-    - Anti-TP doesn't return when interacting with chest
+    - Search for Cultist Camp by keywords + blue crystal
+    - Auto-TP after finding camp
+    - Manual TP to saved camp (Y)
+    - Anti-TP doesn't return when interacting
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -24,18 +25,14 @@ if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiNam
 -- ========== CONFIG ==========
 local CONFIG = {
     FLY_SPEED = 100,
-    SCAN_SPEED = 200,
     SCAN_DEPTH = -500,
     SCAN_RANGE = 2000,
     ESP_CHEST_COLOR = Color3.fromRGB(255, 200, 0),
     ESP_CAMP_COLOR = Color3.fromRGB(200, 0, 255),
     ESP_CULTIST_COLOR = Color3.fromRGB(255, 0, 0),
-    ESP_CRYSTAL_COLOR = Color3.fromRGB(0, 200, 255),
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
-    -- Ключевые слова для поиска лагеря культистов
     CAMP_KEYWORDS = {"cultist", "cult", "ritual", "altar", "crypt", "temple", "stronghold", "camp"},
-    -- Исключения
-    EXCLUDE_KEYWORDS = {"bat", "bone", "npc", "player"},
+    EXCLUDE_KEYWORDS = {"bat", "bone", "npc", "player", "tree", "rock", "grass"},
 }
 
 -- ========== STATE ==========
@@ -45,7 +42,8 @@ local espEnabled = false
 local bypassEnabled = false
 local nightVisionEnabled = false
 local scanEnabled = false
-local interacting = false -- флаг для Anti-TP
+local interacting = false
+local savedCamp = nil -- СЮДА СОХРАНЯЕТСЯ НАЙДЕННЫЙ ЛАГЕРЬ
 local bypassConnection = nil
 local originalLighting = {}
 local savedPos = nil
@@ -60,7 +58,7 @@ pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 260, 0, 330)
+Main.Size = UDim2.new(0, 260, 0, 370)
 Main.Position = UDim2.new(0.5, -130, 0.15, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 Main.BorderSizePixel = 0
@@ -71,23 +69,23 @@ Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 
 local MainStroke = Instance.new("UIStroke", Main)
 MainStroke.Thickness = 1.5
-MainStroke.Color = Color3.fromRGB(0, 255, 200)
+MainStroke.Color = Color3.fromRGB(200, 0, 255)
 MainStroke.Transparency = 0.3
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ CULTIST CAMP HUNTER ★"
+Title.Text = "★ CULTIST CAMP HUNTER v1.2 ★"
 Title.TextColor3 = Color3.fromRGB(200, 0, 255)
 Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 11
+Title.TextSize = 10
 Title.BorderSizePixel = 0
 Title.Parent = Main
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
 
 local function CreateButton(text, yPos, color)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 32)
+    btn.Size = UDim2.new(1, -20, 0, 30)
     btn.Position = UDim2.new(0, 10, 0, yPos)
     btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
     btn.TextColor3 = color
@@ -105,13 +103,15 @@ local function CreateButton(text, yPos, color)
 end
 
 local FlyBtn = CreateButton("FLY: ВЫКЛ (F)", 45, Color3.fromRGB(0, 255, 200))
-local NoclipBtn = CreateButton("NOCLIP: ВЫКЛ (G)", 80, Color3.fromRGB(255, 200, 0))
-local EspBtn = CreateButton("ESP: ВЫКЛ (H)", 115, Color3.fromRGB(100, 150, 255))
-local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 150, Color3.fromRGB(255, 0, 150))
-local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 185, Color3.fromRGB(200, 150, 255))
-local ScanBtn = CreateButton("AUTO-SCAN: ВЫКЛ (X)", 220, Color3.fromRGB(255, 0, 200))
-local StopScanBtn = CreateButton("СТОП СКАН (Z)", 255, Color3.fromRGB(255, 100, 100))
-local InteractBtn = CreateButton("РЕЖИМ ЛУТА (E)", 290, Color3.fromRGB(0, 255, 100))
+local NoclipBtn = CreateButton("NOCLIP: ВЫКЛ (G)", 78, Color3.fromRGB(255, 200, 0))
+local EspBtn = CreateButton("ESP: ВЫКЛ (H)", 111, Color3.fromRGB(100, 150, 255))
+local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 144, Color3.fromRGB(255, 0, 150))
+local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(200, 150, 255))
+local ScanBtn = CreateButton("AUTO-SCAN: ВЫКЛ (X)", 210, Color3.fromRGB(255, 0, 200))
+local TpCampBtn = CreateButton("ТП К ЛАГЕРЮ (Y)", 243, Color3.fromRGB(200, 0, 255))
+local InteractBtn = CreateButton("РЕЖИМ ЛУТА: ВЫКЛ (E)", 276, Color3.fromRGB(0, 255, 100))
+local StopScanBtn = CreateButton("СТОП СКАН (Z)", 309, Color3.fromRGB(255, 100, 100))
+local ClearCampBtn = CreateButton("СБРОСИТЬ ЛАГЕРЬ", 342, Color3.fromRGB(255, 150, 50))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -165,7 +165,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- ========== ANTI-TP (с флагом interacting) ==========
+-- ========== ANTI-TP ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
@@ -174,7 +174,7 @@ local function enableAntiTP()
     savedCF = hrp.CFrame
     bypassConnection = RunService.Heartbeat:Connect(function()
         if not bypassEnabled then return end
-        if interacting then return end -- НЕ возвращаем, если мы лутаем
+        if interacting then return end
         local h = getHRP()
         if not h then return end
         local dist = (h.Position - savedPos).Magnitude
@@ -289,75 +289,13 @@ local function createESP(target, color, label, big)
     end
 end
 
--- ========== FIND CULTIST CAMP (FIXED) ==========
-local function findCultistCamp()
-    -- 1. Ищем по имени модели с ключевыми словами
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local n = obj.Name:lower()
-            for _, kw in ipairs(CONFIG.CAMP_KEYWORDS) do
-                if n:find(kw) then
-                    -- Исключаем кости, NPC, персонажей
-                    local skip = false
-                    for _, ex in ipairs(CONFIG.EXCLUDE_KEYWORDS) do
-                        if n:find(ex) then skip = true break end
-                    end
-                    if not skip and not obj:IsDescendantOf(LocalPlayer.Character or game) 
-                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
-                        return obj
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 2. Ищем здание с синим кристаллом (по PointLight синего цвета)
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("PointLight") then
-            local c = obj.Color
-            -- Синий кристалл: R < 0.3, G > 0.5, B > 0.8
-            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
-                -- Возвращаем родительскую модель
-                local parent = obj.Parent
-                while parent and parent ~= workspace do
-                    if parent:IsA("Model") then
-                        return parent
-                    end
-                    parent = parent.Parent
-                end
-            end
-        end
-    end
-    
-    -- 3. Ищем по цвету Part (синий кристалл)
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Part") or obj:IsA("MeshPart") then
-            local c = obj.Color
-            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
-                -- Возвращаем родительскую модель
-                local parent = obj.Parent
-                while parent and parent ~= workspace do
-                    if parent:IsA("Model") then
-                        return parent
-                    end
-                    parent = parent.Parent
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- ========== ESP UPDATE ==========
 local function updateESP()
     clearESP()
     if not espEnabled then return end
 
-    -- Культистский лагерь (здание с кристаллом)
-    local camp = findCultistCamp()
-    if camp then
-        createESP(camp, CONFIG.ESP_CAMP_COLOR, "★ CULTIST CAMP ★", true)
+    -- Культистский лагерь (сохранённый)
+    if savedCamp then
+        createESP(savedCamp, CONFIG.ESP_CAMP_COLOR, "★ CULTIST CAMP ★", true)
     end
 
     -- Items (сундуки)
@@ -388,6 +326,93 @@ local function setESP(state)
     espEnabled = state
     EspBtn.Text = "ESP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (H)"
     if state then updateESP() else clearESP() end
+end
+
+-- ========== FIND CULTIST CAMP ==========
+local function findCultistCamp()
+    -- 1. Ищем по имени модели с ключевыми словами
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local n = obj.Name:lower()
+            for _, kw in ipairs(CONFIG.CAMP_KEYWORDS) do
+                if n:find(kw) then
+                    local skip = false
+                    for _, ex in ipairs(CONFIG.EXCLUDE_KEYWORDS) do
+                        if n:find(ex) then skip = true break end
+                    end
+                    if not skip and not obj:IsDescendantOf(LocalPlayer.Character or game) 
+                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    
+    -- 2. Ищем здание с синим кристаллом
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("PointLight") then
+            local c = obj.Color
+            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
+                local parent = obj.Parent
+                while parent and parent ~= workspace do
+                    if parent:IsA("Model") then
+                        return parent
+                    end
+                    parent = parent.Parent
+                end
+            end
+        end
+    end
+    
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") or obj:IsA("MeshPart") then
+            local c = obj.Color
+            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
+                local parent = obj.Parent
+                while parent and parent ~= workspace do
+                    if parent:IsA("Model") then
+                        return parent
+                    end
+                    parent = parent.Parent
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- ========== TELEPORT TO CAMP ==========
+local function teleportToCamp()
+    if not savedCamp then
+        print("[CAMP] No camp saved! Run AUTO-SCAN (X) first.")
+        TpCampBtn.Text = "ЛАГЕРЬ НЕ НАЙДЕН!"
+        task.wait(2)
+        TpCampBtn.Text = "ТП К ЛАГЕРЮ (Y)"
+        return
+    end
+    
+    local hrp = getHRP()
+    if not hrp then return end
+    
+    local pos
+    if savedCamp:IsA("Model") then
+        pos = savedCamp.PrimaryPart and savedCamp.PrimaryPart.Position or savedCamp:GetPivot().Position
+    elseif savedCamp:IsA("BasePart") then
+        pos = savedCamp.Position
+    end
+    
+    if pos then
+        -- Сохраняем позицию для Anti-TP
+        savedCF = CFrame.new(pos + Vector3.new(0, 5, 0))
+        savedPos = savedCF.Position
+        hrp.CFrame = savedCF
+        print("[CAMP] TP to: " .. savedCamp:GetFullName())
+        TpCampBtn.Text = "★ ТП К ЛАГЕРЮ ★"
+        task.wait(2)
+        TpCampBtn.Text = "ТП К ЛАГЕРЮ (Y)"
+    end
 end
 
 -- ========== AUTO-SCAN ==========
@@ -425,16 +450,18 @@ local function autoScan()
         local camp = findCultistCamp()
         if camp then
             scanEnabled = false
+            savedCamp = camp -- СОХРАНЯЕМ НАЙДЕННЫЙ ЛАГЕРЬ
             ScanBtn.Text = "AUTO-SCAN: НАЙДЕНО!"
             print("[SCAN] Cultist camp found: " .. camp:GetFullName())
+            print("[SCAN] Camp saved! Press Y to TP.")
             
-            local pos
-            if camp:IsA("Model") then
-                pos = camp.PrimaryPart and camp.PrimaryPart.Position or camp:GetPivot().Position
-            else
-                pos = camp.Position
-            end
-            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
+            -- АВТО-ТП К ЛАГЕРЮ
+            task.wait(0.5)
+            teleportToCamp()
+            
+            -- Возвращаем кнопку
+            task.wait(2)
+            ScanBtn.Text = "AUTO-SCAN: ВЫКЛ (X)"
             return
         end
         
@@ -459,7 +486,7 @@ local function stopScan()
     print("[SCAN] Stopped by user.")
 end
 
--- ========== INTERACT MODE (для лута за стенами) ==========
+-- ========== INTERACT MODE ==========
 local function setInteractMode(state)
     interacting = state
     if state then
@@ -473,6 +500,15 @@ local function setInteractMode(state)
     end
 end
 
+-- ========== CLEAR CAMP ==========
+local function clearCamp()
+    savedCamp = nil
+    print("[CAMP] Saved camp cleared.")
+    ClearCampBtn.Text = "ЛАГЕРЬ СБРОШЕН"
+    task.wait(2)
+    ClearCampBtn.Text = "СБРОСИТЬ ЛАГЕРЬ"
+end
+
 -- ========== INPUT ==========
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -484,6 +520,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.X then autoScan()
     elseif input.KeyCode == Enum.KeyCode.Z then stopScan()
     elseif input.KeyCode == Enum.KeyCode.E then setInteractMode(not interacting)
+    elseif input.KeyCode == Enum.KeyCode.Y then teleportToCamp()
     end
 end)
 
@@ -494,8 +531,10 @@ EspBtn.MouseButton1Click:Connect(function() setESP(not espEnabled) end)
 BypassBtn.MouseButton1Click:Connect(function() setBypass(not bypassEnabled) end)
 NightBtn.MouseButton1Click:Connect(function() setNightVision(not nightVisionEnabled) end)
 ScanBtn.MouseButton1Click:Connect(function() autoScan() end)
-StopScanBtn.MouseButton1Click:Connect(function() stopScan() end)
+TpCampBtn.MouseButton1Click:Connect(function() teleportToCamp() end)
 InteractBtn.MouseButton1Click:Connect(function() setInteractMode(not interacting) end)
+StopScanBtn.MouseButton1Click:Connect(function() stopScan() end)
+ClearCampBtn.MouseButton1Click:Connect(function() clearCamp() end)
 
 -- ========== AUTO-UPDATE ESP ==========
 task.spawn(function()
@@ -513,4 +552,4 @@ TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingD
     Position = UDim2.new(0.5, -130, 0.15, 0)
 }):Play()
 
-print("[NEON] v1.1 CULTIST HUNTER loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, X=scan, Z=stop, E=interact")
+print("[NEON] v1.2 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, X=scan, Y=tp camp, Z=stop, E=interact")
