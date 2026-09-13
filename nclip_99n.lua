@@ -1,16 +1,16 @@
 --[[
-    NEON FLY + ESP + ANTI-TP v3.0
+    NEON FLY + ESP + ANTI-TP v3.0 — WORLD CONTROL
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP on all (H)
-    - Anti-TP (B)
+    - ESP (H)
+    - Anti-TP Bypass (B)
+    - Night Vision (N)
+    - Remove Trees/Grass/Fog (R)
+    - Chunk Loader
     - TP to chest (T)
     - TP to stronghold (Y)
-    - Remove trees/fog/grass (R)
-    - Night vision (N)
-    - Max graphics distance (M)
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -37,9 +37,10 @@ local CONFIG = {
     ESP_BUILDING_COLOR = Color3.fromRGB(100, 150, 255),
     ESP_ITEM_COLOR = Color3.fromRGB(0, 255, 100),
     ESP_NPC_COLOR = Color3.fromRGB(255, 70, 70),
-    NIGHT_VISION = false,
-    REMOVE_OBJECTS = false,
-    MAX_DISTANCE = false,
+    ESP_LOG_COLOR = Color3.fromRGB(200, 150, 100),
+    NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
+    TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
+    GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
 }
 
 -- ========== STATE ==========
@@ -48,12 +49,11 @@ local noclipEnabled = false
 local espEnabled = false
 local bypassEnabled = false
 local nightVisionEnabled = false
-local removeEnabled = false
-local maxDistanceEnabled = false
+local worldCleanEnabled = false
 local savedCFrame = nil
 local bypassConnection = nil
-local removedObjects = {}
 local originalLighting = {}
+local removedObjects = {}
 
 -- ========== UI ==========
 local ScreenGui = Instance.new("ScreenGui")
@@ -64,8 +64,8 @@ pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 400)
-Main.Position = UDim2.new(0.5, -140, 0.1, 0)
+Main.Size = UDim2.new(0, 280, 0, 360)
+Main.Position = UDim2.new(0.5, -140, 0.15, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -81,10 +81,10 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON FLY + ESP v3 ★"
+Title.Text = "★ NEON v3.0 WORLD CONTROL ★"
 Title.TextColor3 = Color3.fromRGB(0, 255, 200)
 Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 13
+Title.TextSize = 12
 Title.BorderSizePixel = 0
 Title.Parent = Main
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
@@ -97,7 +97,7 @@ local function CreateButton(text, yPos, color)
     btn.TextColor3 = color
     btn.Text = text
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 11
+    btn.TextSize = 10
     btn.AutoButtonColor = false
     btn.Parent = Main
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
@@ -108,16 +108,15 @@ local function CreateButton(text, yPos, color)
     return btn
 end
 
-local y = 42
-local FlyBtn = CreateButton("FLY: ВЫКЛ (F)", y, Color3.fromRGB(0, 255, 200)); y = y + 34
-local NoclipBtn = CreateButton("NOCLIP: ВЫКЛ (G)", y, Color3.fromRGB(255, 200, 0)); y = y + 34
-local EspBtn = CreateButton("ESP: ВЫКЛ (H)", y, Color3.fromRGB(100, 150, 255)); y = y + 34
-local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", y, Color3.fromRGB(255, 0, 150)); y = y + 34
-local NightBtn = CreateButton("НОЧНОЕ ЗРЕНИЕ: ВЫКЛ (N)", y, Color3.fromRGB(200, 200, 255)); y = y + 34
-local RemoveBtn = CreateButton("УБРАТЬ ДЕРЕВЬЯ/ТУМАН: ВЫКЛ (R)", y, Color3.fromRGB(150, 255, 100)); y = y + 34
-local MaxDistBtn = CreateButton("МАКС. ДАЛЬНОСТЬ: ВЫКЛ (M)", y, Color3.fromRGB(255, 150, 50)); y = y + 34
-local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", y, Color3.fromRGB(0, 255, 100)); y = y + 34
-local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", y, Color3.fromRGB(255, 100, 200))
+local FlyBtn = CreateButton("FLY: ВЫКЛ (F)", 45, Color3.fromRGB(0, 255, 200))
+local NoclipBtn = CreateButton("NOCLIP: ВЫКЛ (G)", 78, Color3.fromRGB(255, 200, 0))
+local EspBtn = CreateButton("ESP: ВЫКЛ (H)", 111, Color3.fromRGB(100, 150, 255))
+local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 144, Color3.fromRGB(255, 0, 150))
+local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(200, 150, 255))
+local WorldBtn = CreateButton("CLEAN WORLD: ВЫКЛ (R)", 210, Color3.fromRGB(255, 150, 50))
+local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", 243, Color3.fromRGB(0, 255, 100))
+local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(255, 100, 200))
+local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ", 309, Color3.fromRGB(0, 200, 255))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -181,7 +180,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- ========== ANTI-TP ==========
+-- ========== ANTI-TELEPORT BYPASS ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
@@ -199,7 +198,7 @@ local function enableAntiTP()
             lastCFrame = h.CFrame
         end
     end)
-    print("[ANTI-TP] Enabled")
+    print("[ANTI-TP] Safe bypass enabled")
 end
 
 local function disableAntiTP()
@@ -207,7 +206,7 @@ local function disableAntiTP()
         bypassConnection:Disconnect()
         bypassConnection = nil
     end
-    print("[ANTI-TP] Disabled")
+    print("[ANTI-TP] Bypass disabled")
 end
 
 local function setBypass(state)
@@ -217,114 +216,131 @@ local function setBypass(state)
 end
 
 -- ========== NIGHT VISION ==========
+local function saveLighting()
+    originalLighting = {
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Brightness = Lighting.Brightness,
+        ClockTime = Lighting.ClockTime,
+        FogEnd = Lighting.FogEnd,
+        FogStart = Lighting.FogStart,
+        FogColor = Lighting.FogColor,
+        GlobalShadows = Lighting.GlobalShadows,
+    }
+end
+
 local function setNightVision(state)
     nightVisionEnabled = state
-    NightBtn.Text = "НОЧНОЕ ЗРЕНИЕ: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
+    NightBtn.Text = "NIGHT VISION: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
     if state then
-        -- Сохраняем оригинальные настройки
-        originalLighting.Ambient = Lighting.Ambient
-        originalLighting.OutdoorAmbient = Lighting.OutdoorAmbient
-        originalLighting.Brightness = Lighting.Brightness
-        originalLighting.ClockTime = Lighting.ClockTime
-        originalLighting.FogEnd = Lighting.FogEnd
-        originalLighting.FogStart = Lighting.FogStart
-        originalLighting.FogColor = Lighting.FogColor
-
-        -- Включаем ночное зрение
-        Lighting.Ambient = Color3.fromRGB(200, 200, 200)
-        Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+        if not originalLighting.Ambient then saveLighting() end
+        Lighting.Ambient = CONFIG.NIGHT_VISION_COLOR
+        Lighting.OutdoorAmbient = CONFIG.NIGHT_VISION_COLOR
         Lighting.Brightness = 3
-        Lighting.ClockTime = 12 -- день
+        Lighting.ClockTime = 12
         Lighting.FogEnd = 100000
         Lighting.FogStart = 100000
-        Lighting.FogColor = Color3.fromRGB(200, 200, 200)
+        Lighting.FogColor = CONFIG.NIGHT_VISION_COLOR
         Lighting.GlobalShadows = false
-
-        -- Добавляем Brightness
-        local brightness = Instance.new("ColorCorrectionEffect")
-        brightness.Name = "NeonNightVision"
-        brightness.Brightness = 1
-        brightness.Contrast = 0.2
-        brightness.Saturation = -0.2
-        brightness.Parent = Lighting
+        -- Добавляем PointLight к персонажу для подсветки
+        local hrp = getHRP()
+        if hrp then
+            local light = hrp:FindFirstChild("NeonLight") or Instance.new("PointLight")
+            light.Name = "NeonLight"
+            light.Brightness = 5
+            light.Range = 100
+            light.Color = CONFIG.NIGHT_VISION_COLOR
+            light.Parent = hrp
+        end
     else
-        -- Восстанавливаем
-        if originalLighting.Ambient then Lighting.Ambient = originalLighting.Ambient end
-        if originalLighting.OutdoorAmbient then Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient end
-        if originalLighting.Brightness then Lighting.Brightness = originalLighting.Brightness end
-        if originalLighting.ClockTime then Lighting.ClockTime = originalLighting.ClockTime end
-        if originalLighting.FogEnd then Lighting.FogEnd = originalLighting.FogEnd end
-        if originalLighting.FogStart then Lighting.FogStart = originalLighting.FogStart end
-        if originalLighting.FogColor then Lighting.FogColor = originalLighting.FogColor end
-        Lighting.GlobalShadows = true
-        local nv = Lighting:FindFirstChild("NeonNightVision")
-        if nv then nv:Destroy() end
+        Lighting.Ambient = originalLighting.Ambient or Color3.fromRGB(0, 0, 0)
+        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient or Color3.fromRGB(0, 0, 0)
+        Lighting.Brightness = originalLighting.Brightness or 1
+        Lighting.ClockTime = originalLighting.ClockTime or 14
+        Lighting.FogEnd = originalLighting.FogEnd or 1000
+        Lighting.FogStart = originalLighting.FogStart or 0
+        Lighting.FogColor = originalLighting.FogColor or Color3.fromRGB(192, 192, 192)
+        Lighting.GlobalShadows = originalLighting.GlobalShadows ~= false
+        local hrp = getHRP()
+        if hrp and hrp:FindFirstChild("NeonLight") then
+            hrp.NeonLight:Destroy()
+        end
     end
 end
 
--- ========== REMOVE OBJECTS ==========
-local function setRemoveObjects(state)
-    removeEnabled = state
-    RemoveBtn.Text = "УБРАТЬ ДЕРЕВЬЯ/ТУМАН: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (R)"
-    if state then
-        -- Удаляем туман
-        originalLighting.FogEnd = Lighting.FogEnd
-        originalLighting.FogStart = Lighting.FogStart
-        Lighting.FogEnd = 100000
-        Lighting.FogStart = 100000
-
-        -- Удаляем деревья и траву
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") or obj:IsA("BasePart") then
-                local n = obj.Name:lower()
-                if n:find("tree") or n:find("grass") or n:find("bush") or n:find("plant") or n:find("leaf") or n:find("foliage") then
-                    if obj:IsA("BasePart") then
-                        obj.Transparency = 1
-                        table.insert(removedObjects, {obj = obj, orig = obj.Transparency})
-                    elseif obj:IsA("Model") then
-                        for _, part in ipairs(obj:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.Transparency = 1
-                                table.insert(removedObjects, {obj = part, orig = part.Transparency})
-                            end
-                        end
+-- ========== WORLD CLEANUP ==========
+local function removeWorldObjects()
+    local removed = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = obj.Name:lower()
+            local shouldRemove = false
+            for _, kw in ipairs(CONFIG.TREE_KEYWORDS) do
+                if name:find(kw) and not name:find("treehouse") then
+                    shouldRemove = true
+                    break
+                end
+            end
+            if not shouldRemove then
+                for _, kw in ipairs(CONFIG.GRASS_KEYWORDS) do
+                    if name:find(kw) then
+                        shouldRemove = true
+                        break
                     end
                 end
             end
-        end
-        print("[REMOVE] Removed " .. #removedObjects .. " objects")
-    else
-        -- Восстанавливаем
-        for _, data in ipairs(removedObjects) do
-            if data.obj and data.obj.Parent then
-                data.obj.Transparency = data.orig
+            if shouldRemove then
+                table.insert(removedObjects, {obj = obj, parent = obj.Parent})
+                obj.Parent = nil
+                removed = removed + 1
             end
         end
-        removedObjects = {}
-        if originalLighting.FogEnd then Lighting.FogEnd = originalLighting.FogEnd end
-        if originalLighting.FogStart then Lighting.FogStart = originalLighting.FogStart end
+        if obj:IsA("ParticleEmitter") then
+            if obj.Name:lower():find("fog") or obj.Name:lower():find("mist") then
+                obj.Enabled = false
+            end
+        end
+    end
+    return removed
+end
+
+local function restoreWorldObjects()
+    for _, data in ipairs(removedObjects) do
+        if data.obj then
+            data.obj.Parent = data.parent
+        end
+    end
+    removedObjects = {}
+end
+
+local function setWorldClean(state)
+    worldCleanEnabled = state
+    WorldBtn.Text = "CLEAN WORLD: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (R)"
+    if state then
+        local count = removeWorldObjects()
+        print("[WORLD] Removed " .. count .. " objects")
+    else
+        restoreWorldObjects()
+        print("[WORLD] Restored objects")
     end
 end
 
--- ========== MAX DISTANCE ==========
-local function setMaxDistance(state)
-    maxDistanceEnabled = state
-    MaxDistBtn.Text = "МАКС. ДАЛЬНОСТЬ: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (M)"
-    if state then
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.Material = Enum.Material.SmoothPlastic
-            end
-            if obj:IsA("Decal") or obj:IsA("Texture") then
-                obj.Transparency = 1
-            end
+-- ========== CHUNK LOADER ==========
+local function loadAllChunks()
+    print("[CHUNK] Loading all chunks...")
+    local hrp = getHRP()
+    if not hrp then return end
+    -- Принудительно прогружаем все части карты
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.LocalTransparencyModifier = 0
         end
-        print("[MAXDIST] Enabled")
-    else
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level10
-        print("[MAXDIST] Disabled")
     end
+    -- Если есть StreamingEnabled — отключаем его
+    pcall(function()
+        workspace.StreamingEnabled = false
+    end)
+    print("[CHUNK] Done")
 end
 
 -- ========== ESP ==========
@@ -332,7 +348,9 @@ local espObjects = {}
 
 local function clearESP()
     for _, obj in ipairs(espObjects) do
-        if obj and obj.Parent then obj:Destroy() end
+        if obj and obj.Parent then
+            obj:Destroy()
+        end
     end
     espObjects = {}
 end
@@ -340,8 +358,8 @@ end
 local function createESP(target, color, label)
     if not target then return end
     local box = Instance.new("BoxHandleAdornment")
-    box.Size = Vector3.new(6, 6, 6)
-    box.Transparency = 0.4
+    box.Size = Vector3.new(4, 4, 4)
+    box.Transparency = 0.5
     box.Color3 = color
     box.AlwaysOnTop = true
     box.ZIndex = 10
@@ -351,9 +369,9 @@ local function createESP(target, color, label)
 
     if label then
         local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 150, 0, 30)
+        billboard.Size = UDim2.new(0, 120, 0, 20)
         billboard.AlwaysOnTop = true
-        billboard.StudsOffset = Vector3.new(0, 5, 0)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
         billboard.Adornee = target
         billboard.Parent = target
         local text = Instance.new("TextLabel")
@@ -362,9 +380,8 @@ local function createESP(target, color, label)
         text.Text = label
         text.TextColor3 = color
         text.Font = Enum.Font.GothamBold
-        text.TextSize = 12
+        text.TextSize = 10
         text.TextStrokeTransparency = 0
-        text.TextStrokeColor3 = Color3.new(0, 0, 0)
         text.Parent = billboard
         table.insert(espObjects, billboard)
     end
@@ -374,45 +391,40 @@ local function updateESP()
     clearESP()
     if not espEnabled then return end
 
-    -- Сундуки
     local items = workspace:FindFirstChild("Items")
     if items then
         for _, obj in ipairs(items:GetChildren()) do
             if obj.Name:lower():find("chest") then
                 if obj.Name == "ChestDEF" then
-                    createESP(obj, CONFIG.ESP_STRONGHOLD_COLOR, "СТРОНГХОЛД СУНДУК")
+                    createESP(obj, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD CHEST ★")
                 else
-                    createESP(obj, CONFIG.ESP_CHEST_COLOR, "СУНДУК: " .. obj.Name)
+                    createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name)
                 end
+            elseif obj.Name:lower() == "log" then
+                createESP(obj, CONFIG.ESP_LOG_COLOR, "LOG")
             elseif obj:IsA("Model") or obj:IsA("BasePart") then
-                createESP(obj, CONFIG.ESP_ITEM_COLOR, "ПРЕДМЕТ: " .. obj.Name)
+                createESP(obj, CONFIG.ESP_ITEM_COLOR, obj.Name)
             end
         end
     end
 
-    -- Здания и ландмарки
     local map = workspace:FindFirstChild("Map")
     if map then
-        local landmarkKeywords = {"hut", "cabin", "tower", "lodge", "shack", "house", "treehouse", "castle", "shed", "camp", "fire", "tent", "cave", "burnt", "fishing", "fairy", "jail", "tool", "stronghold", "fort"}
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                for _, kw in ipairs(landmarkKeywords) do
-                    if n:find(kw) then
-                        createESP(landmark, CONFIG.ESP_BUILDING_COLOR, "ЗДАНИЕ: " .. landmark.Name)
-                        break
-                    end
+                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
+                    createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name)
                 end
             end
         end
     end
 
-    -- NPC
     local chars = workspace:FindFirstChild("Characters")
     if chars then
         for _, npc in ipairs(chars:GetChildren()) do
             if npc:IsA("Model") and npc:FindFirstChildOfClass("Humanoid") then
-                createESP(npc, CONFIG.ESP_NPC_COLOR, "NPC: " .. npc.Name)
+                createESP(npc, CONFIG.ESP_NPC_COLOR, npc.Name)
             end
         end
     end
@@ -436,10 +448,7 @@ local function findNearestChest()
             local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
             if pos then
                 local d = (pos - hrp.Position).Magnitude
-                if d < dist then
-                    dist = d
-                    nearest = obj
-                end
+                if d < dist then dist = d nearest = obj end
             end
         end
     end
@@ -450,9 +459,7 @@ local function findStrongholdChest()
     local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
     if not cg then return nil end
     for _, obj in ipairs(cg:GetDescendants()) do
-        if obj.Name == "ChestDEF" then
-            return obj
-        end
+        if obj.Name == "ChestDEF" then return obj end
     end
     return nil
 end
@@ -479,8 +486,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.H then setESP(not espEnabled)
     elseif input.KeyCode == Enum.KeyCode.B then setBypass(not bypassEnabled)
     elseif input.KeyCode == Enum.KeyCode.N then setNightVision(not nightVisionEnabled)
-    elseif input.KeyCode == Enum.KeyCode.R then setRemoveObjects(not removeEnabled)
-    elseif input.KeyCode == Enum.KeyCode.M then setMaxDistance(not maxDistanceEnabled)
+    elseif input.KeyCode == Enum.KeyCode.R then setWorldClean(not worldCleanEnabled)
     elseif input.KeyCode == Enum.KeyCode.T then
         local chest = findNearestChest()
         if chest then teleportTo(chest) end
@@ -496,8 +502,7 @@ NoclipBtn.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
 EspBtn.MouseButton1Click:Connect(function() setESP(not espEnabled) end)
 BypassBtn.MouseButton1Click:Connect(function() setBypass(not bypassEnabled) end)
 NightBtn.MouseButton1Click:Connect(function() setNightVision(not nightVisionEnabled) end)
-RemoveBtn.MouseButton1Click:Connect(function() setRemoveObjects(not removeEnabled) end)
-MaxDistBtn.MouseButton1Click:Connect(function() setMaxDistance(not maxDistanceEnabled) end)
+WorldBtn.MouseButton1Click:Connect(function() setWorldClean(not worldCleanEnabled) end)
 TpChestBtn.MouseButton1Click:Connect(function()
     local chest = findNearestChest()
     if chest then teleportTo(chest) end
@@ -505,6 +510,12 @@ end)
 TpStrongBtn.MouseButton1Click:Connect(function()
     local strong = findStrongholdChest()
     if strong then teleportTo(strong) end
+end)
+ChunkBtn.MouseButton1Click:Connect(function()
+    loadAllChunks()
+    ChunkBtn.Text = "ЧАНКИ ЗАГРУЖЕНЫ"
+    task.wait(2)
+    ChunkBtn.Text = "ЗАГРУЗИТЬ ЧАНКИ"
 end)
 
 -- ========== AUTO-UPDATE ESP ==========
@@ -517,10 +528,10 @@ end)
 
 -- ========== APPEAR ==========
 Main.BackgroundTransparency = 1
-Main.Position = UDim2.new(0.5, -140, 0.1, 30)
+Main.Position = UDim2.new(0.5, -140, 0.15, 30)
 TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
     BackgroundTransparency = 0,
-    Position = UDim2.new(0.5, -140, 0.1, 0)
+    Position = UDim2.new(0.5, -140, 0.15, 0)
 }):Play()
 
-print("[NEON] v3.0 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=remove, M=maxdist, T=chest, Y=stronghold")
+print("[NEON] v3.0 WORLD CONTROL loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, T=chest, Y=stronghold")
