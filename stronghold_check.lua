@@ -1,12 +1,13 @@
 --[[
-    NEON SEC-PANEL v3.3 — DIAGNOSTIC EDITION
+    NEON SEC-PANEL v3.4 — REAL OBJECTS EDITION
     Author: I.S.-1
-    Features:
-    - Auto-scan all ProximityPrompts and show names in log
-    - Find campfire by prompt action text
-    - Find wood by prompt or by name
-    - Teleport to chest, not campfire
-    - Hop checks JobId before/after
+    Fixes:
+    - Scan ALL objects, not just ProximityPrompt
+    - Find campfire by name (FirePit, Campfire, etc.) excluding Meshes
+    - Find wood by name (Wood, Log, Stick, Branch)
+    - Find chest by name (ChestDEF for stronghold, Item Chest for normal)
+    - Stronghold check: only count visible objects
+    - Hop only if no visible ChestDEF
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -21,11 +22,12 @@ local CONFIG = {
     MAX_PAGES = 15,
     CAMPFIRE_WAIT = 3,
     WOOD_WAIT = 2,
-    STRONGHOLD_KEYWORDS = {"Stronghold", "DiamondChest", "ChestDEF"},
-    CAMPFIRE_ACTION_KEYWORDS = {"ignite", "light", "fire", "camp", "burn", "start"},
-    WOOD_ACTION_KEYWORDS = {"pick", "collect", "gather", "take", "wood", "log", "stick"},
-    CHEST_KEYWORDS = {"ChestDEF", "DiamondChest", "Chest"},
-    CHEST_EXCLUDE = {"Campfire", "FirePit", "Bonfire"},
+    STRONGHOLD_CHEST = "ChestDEF",
+    NORMAL_CHEST_KEYWORDS = {"Item Chest", "Volcanic Chest", "Mossy Chest", "Chest"},
+    CAMPFIRE_KEYWORDS = {"campfire", "firepit", "bonfire", "fire place", "fireplace"},
+    CAMPFIRE_EXCLUDE = {"mesh", "cylinder", "firefly", "firework"},
+    WOOD_KEYWORDS = {"wood", "log", "stick", "branch", "timber", "plank"},
+    WOOD_EXCLUDE = {"mesh", "cylinder", "tree", "forest"},
 }
 
 -- ========== CLEANUP ==========
@@ -42,7 +44,7 @@ if LocalPlayer.PlayerGui:FindFirstChild("NeonLoader") then LocalPlayer.PlayerGui
 local executor_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
 local queue_on_tp = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
 
--- ========== LOADER (same as before) ==========
+-- ========== LOADER ==========
 local function ShowLoader()
     local LoaderGui = Instance.new("ScreenGui")
     LoaderGui.Name = "NeonLoader"
@@ -84,7 +86,7 @@ local function ShowLoader()
     LSub.Size = UDim2.new(1, 0, 0, 25)
     LSub.Position = UDim2.new(0, 0, 0.4, 60)
     LSub.BackgroundTransparency = 1
-    LSub.Text = "v3.3 DIAGNOSTIC EDITION"
+    LSub.Text = "v3.4 REAL OBJECTS"
     LSub.TextColor3 = Color3.fromRGB(0, 255, 200)
     LSub.Font = Enum.Font.GothamMedium
     LSub.TextSize = 14
@@ -144,7 +146,7 @@ local function CreateMainUI()
     if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 340, 0, 560)
+    Main.Size = UDim2.new(0, 340, 0, 580)
     Main.Position = UDim2.new(0.5, -170, 0.1, 50)
     Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
     Main.BorderSizePixel = 0
@@ -192,7 +194,7 @@ local function CreateMainUI()
     Title.Size = UDim2.new(1, -60, 1, 0)
     Title.Position = UDim2.new(0, 15, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "★ NEON SEC-PANEL v3.3"
+    Title.Text = "★ NEON SEC-PANEL v3.4"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.Font = Enum.Font.GothamBlack
     Title.TextSize = 14
@@ -275,7 +277,7 @@ local function CreateMainUI()
     LogText.TextXAlignment = Enum.TextXAlignment.Left
     LogText.TextYAlignment = Enum.TextYAlignment.Top
     LogText.TextWrapped = true
-    LogText.Text = "[SYS] Ядро v3.3 загружено"
+    LogText.Text = "[SYS] Ядро v3.4 загружено"
     LogText.RichText = true
     LogText.Parent = LogScroll
 
@@ -325,7 +327,7 @@ local function CreateMainUI()
     end
 
     local yPos = 215
-    local ScanBtn = CreateButton("🔍 Сканировать объекты (костёр/дрова/сундук)", yPos, Color3.fromRGB(0, 200, 255), Color3.fromRGB(0, 100, 200))
+    local ScanBtn = CreateButton("🔍 Сканировать костёр/дрова", yPos, Color3.fromRGB(0, 200, 255), Color3.fromRGB(0, 100, 200))
     yPos = yPos + 46
     local CheckBtn = CreateButton("1. Проверить Стронгхолд", yPos, Color3.fromRGB(255, 255, 255), Color3.fromRGB(100, 150, 255))
     yPos = yPos + 46
@@ -343,80 +345,95 @@ local function CreateMainUI()
     local function getCharacter() return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() end
     local function getHRP() local c = getCharacter() return c:FindFirstChild("HumanoidRootPart") end
 
-    local function getActionText(prompt)
-        return (prompt.ActionText or "") .. " " .. (prompt.ObjectText or "")
+    local function isExcluded(name, excludeList)
+        for _, kw in ipairs(excludeList) do
+            if name:lower():find(kw:lower()) then return true end
+        end
+        return false
     end
 
-    -- ========== SCANNER ==========
-    local function ScanAllPrompts()
-        AddLog("=== СКАНЕР ОБЪЕКТОВ ===")
-        local found = {}
+    local function isVisible(obj)
+        if not obj then return false end
+        if obj:IsA("BasePart") then
+            return obj.Transparency < 1 and obj.Parent ~= nil
+        end
+        if obj:IsA("Model") then
+            for _, part in ipairs(obj:GetDescendants()) do
+                if part:IsA("BasePart") and part.Transparency < 1 then
+                    return true
+                end
+            end
+            return false
+        end
+        return true
+    end
+
+    -- ========== SCAN ALL ==========
+    local function ScanAll()
+        AddLog("=== ПОЛНЫЙ СКАН ===")
+        
+        AddLog("--- КОСТРЫ ---")
+        local fireCount = 0
         for _, obj in ipairs(workspace:GetDescendants()) do
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then
-                local text = getActionText(prompt)
-                table.insert(found, {
-                    name = obj.Name,
-                    full = obj:GetFullName(),
-                    action = text,
-                    prompt = prompt
-                })
+            local n = obj.Name:lower()
+            if n:find("fire") or n:find("camp") or n:find("bonfire") then
+                if not isExcluded(obj.Name, CONFIG.CAMPFIRE_EXCLUDE) then
+                    fireCount = fireCount + 1
+                    AddLog("  " .. obj:GetFullName() .. " | Class: " .. obj.ClassName)
+                end
             end
         end
+        if fireCount == 0 then AddLog("  Костры не найдены!", true) end
 
-        if #found == 0 then
-            AddLog("ProximityPrompt'ов не найдено вообще!", true)
-            return
+        AddLog("--- ДРОВА ---")
+        local woodCount = 0
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local n = obj.Name:lower()
+            for _, kw in ipairs(CONFIG.WOOD_KEYWORDS) do
+                if n:find(kw) and not isExcluded(obj.Name, CONFIG.WOOD_EXCLUDE) then
+                    woodCount = woodCount + 1
+                    AddLog("  " .. obj:GetFullName() .. " | Class: " .. obj.ClassName)
+                    break
+                end
+            end
         end
+        if woodCount == 0 then AddLog("  Дрова не найдены!", true) end
 
-        AddLog("Найдено " .. #found .. " объектов с ProximityPrompt:")
-        for i, data in ipairs(found) do
-            AddLog(string.format("  [%d] %s | Action: %s", i, data.full, data.action))
+        AddLog("--- СУНДУКИ ---")
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local n = obj.Name:lower()
+            if n:find("chest") then
+                AddLog("  " .. obj:GetFullName() .. " | Class: " .. obj.ClassName)
+            end
         end
     end
 
     -- ========== FIND CAMPFIRE ==========
     local function findCampfire()
-        -- Ищем по ActionText/ ObjectText
         for _, obj in ipairs(workspace:GetDescendants()) do
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then
-                local text = getActionText(prompt):lower()
-                for _, kw in ipairs(CONFIG.CAMPFIRE_ACTION_KEYWORDS) do
-                    if text:find(kw) then
-                        return obj, prompt
-                    end
+            local n = obj.Name:lower()
+            for _, kw in ipairs(CONFIG.CAMPFIRE_KEYWORDS) do
+                if n:find(kw) and not isExcluded(obj.Name, CONFIG.CAMPFIRE_EXCLUDE) then
+                    return obj
                 end
             end
         end
-        -- Если не нашли по действию — ищем по имени, исключая меши
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj.Name:lower():find("campfire") or obj.Name:lower():find("bonfire") or obj.Name:lower():find("firepit") then
-                if not obj.Name:lower():find("mesh") and not obj.Name:lower():find("cylinder") and not obj.Name:lower():find("firefly") then
-                    local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-                    return obj, prompt
-                end
-            end
-        end
-        return nil, nil
+        return nil
     end
 
     -- ========== FIND WOOD ==========
     local function findWood()
-        local woodObjects = {}
+        local woods = {}
         for _, obj in ipairs(workspace:GetDescendants()) do
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then
-                local text = getActionText(prompt):lower()
-                for _, kw in ipairs(CONFIG.WOOD_ACTION_KEYWORDS) do
-                    if text:find(kw) then
-                        table.insert(woodObjects, {obj = obj, prompt = prompt})
-                        break
-                    end
+            local n = obj.Name:lower()
+            for _, kw in ipairs(CONFIG.WOOD_KEYWORDS) do
+                if n:find(kw) and not isExcluded(obj.Name, CONFIG.WOOD_EXCLUDE) then
+                    table.insert(woods, obj)
+                    break
                 end
             end
         end
-        return woodObjects
+        return woods
     end
 
     -- ========== COLLECT WOOD ==========
@@ -424,7 +441,7 @@ local function CreateMainUI()
         AddLog("Ищу дрова...")
         local woods = findWood()
         if #woods == 0 then
-            AddLog("Дрова не найдены. Возможно, они не имеют ProximityPrompt.", true)
+            AddLog("Дрова не найдены!", true)
             return 0
         end
         AddLog("Найдено дров: " .. #woods)
@@ -432,14 +449,39 @@ local function CreateMainUI()
         if not hrp then return 0 end
 
         local collected = 0
-        for i, data in ipairs(woods) do
-            if collected >= 10 then break end
-            local obj = data.obj
-            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or (obj:IsA("BasePart") and obj.Position or nil)
+        for i, obj in ipairs(woods) do
+            if collected >= 15 then break end
+            local pos
+            if obj:IsA("Model") then
+                pos = obj.PrimaryPart and obj.PrimaryPart.Position or (obj:GetPivot().Position)
+            elseif obj:IsA("BasePart") then
+                pos = obj.Position
+            end
             if pos then
                 hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                task.wait(0.3)
-                pcall(function() fireproximityprompt(data.prompt) end)
+                task.wait(0.4)
+                -- Пробуем всё
+                local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+                if prompt then
+                    pcall(function() fireproximityprompt(prompt) end)
+                end
+                local cd = obj:FindFirstChildOfClass("ClickDetector", true)
+                if cd then
+                    pcall(function() fireclickdetector(cd) end)
+                end
+                if obj:IsA("BasePart") then
+                    pcall(function()
+                        firetouchinterest(hrp, obj, 0)
+                        task.wait(0.1)
+                        firetouchinterest(hrp, obj, 1)
+                    end)
+                end
+                -- Пробуем RemoteEvent внутри
+                for _, d in ipairs(obj:GetDescendants()) do
+                    if d:IsA("RemoteEvent") then
+                        pcall(function() d:FireServer() end)
+                    end
+                end
                 collected = collected + 1
                 AddLog("Собрано: " .. obj.Name .. " (" .. collected .. ")")
                 task.wait(0.4)
@@ -451,13 +493,12 @@ local function CreateMainUI()
     -- ========== IGNITE CAMPFIRE ==========
     local function TryIgniteCampfire()
         AddLog("Ищу костёр...")
-        local cf, prompt = findCampfire()
+        local cf = findCampfire()
         if not cf then
             AddLog("Костёр не найден. Попробуй сканирование.", true)
             return false
         end
         AddLog("Костёр: " .. cf:GetFullName())
-        if prompt then AddLog("Prompt: " .. getActionText(prompt)) end
 
         -- Собираем дрова
         local wood = CollectWood()
@@ -466,12 +507,18 @@ local function CreateMainUI()
         -- ТП к костру
         local hrp = getHRP()
         if hrp then
-            local pos = cf:IsA("Model") and (cf.PrimaryPart and cf.PrimaryPart.CFrame or cf:GetPivot()) or cf.CFrame
+            local pos
+            if cf:IsA("Model") then
+                pos = cf.PrimaryPart and cf.PrimaryPart.CFrame or cf:GetPivot()
+            else
+                pos = cf.CFrame
+            end
             hrp.CFrame = pos + Vector3.new(0, 3, 0)
             task.wait(0.5)
         end
 
-        -- Прожигаем prompt
+        -- Пробуем все способы
+        local prompt = cf:FindFirstChildOfClass("ProximityPrompt", true)
         if prompt then
             pcall(function() fireproximityprompt(prompt) end)
             AddLog("Костёр разожжён (Prompt)!")
@@ -479,20 +526,27 @@ local function CreateMainUI()
             return true
         end
 
-        -- Если нет prompt — ищем RemoteEvent внутри
-        for _, obj in ipairs(cf:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                pcall(function() obj:FireServer() end)
-                AddLog("Костёр разожжён (Remote)!" )
+        local cd = cf:FindFirstChildOfClass("ClickDetector", true)
+        if cd then
+            pcall(function() fireclickdetector(cd) end)
+            AddLog("Костёр разожжён (Click)!")
+            task.wait(CONFIG.CAMPFIRE_WAIT)
+            return true
+        end
+
+        for _, d in ipairs(cf:GetDescendants()) do
+            if d:IsA("RemoteEvent") then
+                pcall(function() d:FireServer() end)
+                AddLog("Костёр разожжён (Remote)!")
                 task.wait(CONFIG.CAMPFIRE_WAIT)
                 return true
             end
         end
 
-        -- Если всё ещё нет — ищем в ReplicatedStorage
-        for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-            if obj:IsA("RemoteEvent") and (obj.Name:lower():find("fire") or obj.Name:lower():find("ignite") or obj.Name:lower():find("camp")) then
-                pcall(function() obj:FireServer() end)
+        -- Если всё ещё нет — ищем RemoteEvent в ReplicatedStorage с fire/camp
+        for _, d in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+            if d:IsA("RemoteEvent") and (d.Name:lower():find("fire") or d.Name:lower():find("ignite") or d.Name:lower():find("camp")) then
+                pcall(function() d:FireServer() end)
                 AddLog("Костёр разожжён (RS Remote)!")
                 task.wait(CONFIG.CAMPFIRE_WAIT)
                 return true
@@ -503,16 +557,26 @@ local function CreateMainUI()
         return false
     end
 
-    -- ========== FIND CHEST ==========
-    local function findChest()
+    -- ========== FIND STRONGHOLD CHEST ==========
+    local function findStrongholdChest()
         for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj.Name:lower():find("chest") then
-                local excluded = false
-                for _, ex in ipairs(CONFIG.CHEST_EXCLUDE) do
-                    if obj.Name:lower():find(ex:lower()) then excluded = true break end
-                end
-                if not excluded then
+            if obj.Name:lower() == "chestdef" then
+                if isVisible(obj) then
                     return obj
+                end
+            end
+        end
+        return nil
+    end
+
+    -- ========== FIND NORMAL CHEST ==========
+    local function findNormalChest()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            for _, kw in ipairs(CONFIG.NORMAL_CHEST_KEYWORDS) do
+                if obj.Name:lower():find(kw:lower()) then
+                    if obj.Name:lower() ~= "chestdef" and isVisible(obj) then
+                        return obj
+                    end
                 end
             end
         end
@@ -630,18 +694,18 @@ local function CreateMainUI()
 
     -- ========== BUTTON HANDLERS ==========
     ScanBtn.MouseButton1Click:Connect(function()
-        ScanAllPrompts()
+        ScanAll()
     end)
 
     CheckBtn.MouseButton1Click:Connect(function()
-        AddLog("Проверка...")
-        local t = findStronghold()
-        if t then
+        AddLog("Проверка Стронгхолда...")
+        local chest = findStrongholdChest()
+        if chest then
             CheckBtn.Text = "★ СТРОНГХОЛД НАЙДЕН!"
-            AddLog("Найдено: " .. t.Name)
+            AddLog("Найден ChestDEF: " .. chest:GetFullName())
         else
-            CheckBtn.Text = "НЕТ (разожги костёр)"
-            AddLog("Стронгхолд не виден.", true)
+            CheckBtn.Text = "НЕТ СТРОНГХОЛДА"
+            AddLog("ChestDEF не виден. Возможно, Стронгхолд не открыт.", true)
         end
         task.wait(2)
         CheckBtn.Text = "1. Проверить Стронгхолд"
@@ -657,15 +721,23 @@ local function CreateMainUI()
 
     TpBtn.MouseButton1Click:Connect(function()
         AddLog("Ищу сундук...")
-        local chest = findChest()
+        -- Сначала ищем ChestDEF (стронгхолд)
+        local chest = findStrongholdChest()
+        if not chest then
+            -- Если нет — ищем обычный сундук
+            chest = findNormalChest()
+        end
         if chest then
             local hrp = getHRP()
             if hrp then
-                local pos = chest:IsA("Model") and (chest.PrimaryPart and chest.PrimaryPart.CFrame or chest:GetPivot()) or chest.CFrame
-                if pos then
-                    hrp.CFrame = pos + Vector3.new(0, 5, 0)
-                    AddLog("ТП к " .. chest.Name)
+                local pos
+                if chest:IsA("Model") then
+                    pos = chest.PrimaryPart and chest.PrimaryPart.CFrame or chest:GetPivot()
+                else
+                    pos = chest.CFrame
                 end
+                hrp.CFrame = pos + Vector3.new(0, 5, 0)
+                AddLog("ТП к " .. chest.Name)
             end
         else
             AddLog("Сундук не найден!", true)
@@ -684,7 +756,7 @@ local function CreateMainUI()
             HopS.Color = Color3.fromRGB(0, 255, 150)
             AddLog("Авто-хоп ВКЛ")
             task.spawn(function()
-                local t = findStronghold()
+                local t = findStrongholdChest()
                 if t then
                     AddLog("Стронгхолд уже здесь! Хоп не нужен.")
                     getgenv().AutoHopEnabled = false
@@ -727,7 +799,7 @@ local function CreateMainUI()
         Position = UDim2.new(0.5, -170, 0.1, 0)
     }):Play()
 
-    AddLog("Скрипт загружен. v3.3 DIAGNOSTIC EDITION")
+    AddLog("Скрипт загружен. v3.4 REAL OBJECTS")
 end
 
 ShowLoader()
