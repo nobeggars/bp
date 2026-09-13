@@ -1,11 +1,9 @@
 --[[
-    GHOSTWARE v4.2 — COMPACT MENU + TABS
+    GHOSTWARE v4.3 — FIXED CLIPBOARD + SMART DEBUG
     Author: I.S.-1
-    Features:
-    - Tabbed interface (Main / Visual / Scan / Farm / Debug)
-    - Collapse button (—)
-    - Close button (X)
-    - All previous functions
+    Fixes:
+    - Clipboard crash: копирует только последние 50 строк
+    - Debug: показывает только уникальные имена (дрова, костёр, NPC)
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -42,13 +40,13 @@ local highlightObjects = {}
 local fullLog = ""
 local originalLighting = {}
 local espConnections = {}
-local remoteBlockEnabled = false
 local bypassConnection = nil
 local savedPos = nil
 local savedCF = nil
 local autoUpgradeConnection = nil
 local killAuraConnection = nil
 local isCollapsed = false
+local logLines = {} -- массив строк лога
 
 -- ========== CLEANUP ==========
 pcall(function() if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end end)
@@ -84,11 +82,10 @@ TitleBar.BorderSizePixel = 0
 TitleBar.Parent = Main
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 
--- ЗАГОЛОВОК
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.2"
+TitleLabel.Text = "★ GHOSTWARE v4.3"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -96,7 +93,6 @@ TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Parent = TitleBar
 
--- КНОПКА СВОРАЧИВАНИЯ
 local MinimizeBtn = Instance.new("TextButton")
 MinimizeBtn.Size = UDim2.new(0, 25, 0, 22)
 MinimizeBtn.Position = UDim2.new(1, -55, 0, 5)
@@ -109,7 +105,6 @@ MinimizeBtn.AutoButtonColor = false
 MinimizeBtn.Parent = TitleBar
 Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 5)
 
--- КНОПКА ЗАКРЫТИЯ
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 25, 0, 22)
 CloseBtn.Position = UDim2.new(1, -28, 0, 5)
@@ -174,7 +169,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.2] Загружен.\n"
+LogText.Text = "[v4.3] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -182,11 +177,15 @@ local function AddLog(msg, isErr)
     local line = string.format("%s[%s] %s</font>\n", color, os.date("%X"), msg)
     LogText.Text = line .. LogText.Text
     LogScroll.CanvasSize = UDim2.new(0, 0, 0, LogText.AbsoluteSize.Y + 10)
-    fullLog = fullLog .. line .. "\n"
+    
+    -- Храним только последние 50 строк
+    table.insert(logLines, line)
+    if #logLines > 50 then
+        table.remove(logLines, 1)
+    end
 end
 
 -- ========== TAB SYSTEM ==========
-local currentTab = "MAIN"
 local tabContents = {}
 local tabButtons = {}
 
@@ -235,14 +234,12 @@ local function CreateTabButton(tabName)
                 button.TextColor3 = Color3.fromRGB(150, 170, 160)
             end
         end
-        currentTab = tabName
     end)
     
     tabButtons[tabName] = btn
     return btn
 end
 
--- ========== TOGGLE FUNCTION ==========
 local function CreateToggle(parent, text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -4, 0, 26)
@@ -284,7 +281,6 @@ CreateTabContent("SCAN")
 CreateTabContent("FARM")
 CreateTabContent("DEBUG")
 
--- ========== HELPERS ==========
 local function getHRP()
     local char = LocalPlayer.Character
     return char and char:FindFirstChild("HumanoidRootPart")
@@ -296,7 +292,7 @@ local mainTab = tabContents["MAIN"]
 CreateToggle(mainTab, "1. FLY & NOCLIP", function()
     flyEnabled = not flyEnabled
     noclipEnabled = flyEnabled
-    AddLog("Fly & Noclip: " .. (flyEnabled and "ВКЛ" or "ВЫКЛ"))
+    AddLog("Fly: " .. (flyEnabled and "ВКЛ" or "ВЫКЛ"))
     local hrp = getHRP()
     if hrp then
         local hum = hrp.Parent:FindFirstChildOfClass("Humanoid")
@@ -330,7 +326,7 @@ end)
 -- ========== VISUAL TAB ==========
 local visualTab = tabContents["VISUAL"]
 
-local espBtn = CreateToggle(visualTab, "1. ESP (Diamond Chest)", function()
+CreateToggle(visualTab, "1. ESP (Diamond Chest)", function()
     espEnabled = not espEnabled
     AddLog("ESP: " .. (espEnabled and "ВКЛ" or "ВЫКЛ"))
     
@@ -454,17 +450,13 @@ CreateToggle(scanTab, "1. SPIRAL SCAN", function()
         AddLog("Скан остановлен")
         return
     end
-    
     local hrp = getHRP()
     if not hrp then AddLog("HRP не найден", true) return end
-    
     scanEnabled = true
     AddLog("Запуск спирального сканирования...")
-    
     local startPos = hrp.Position
     local x, z = 0, 0
     local dx, dz = 0, -1
-    
     task.spawn(function()
         for i = 1, (SCAN.MAX_RINGS * 2)^2 do
             if not scanEnabled then break end
@@ -479,14 +471,9 @@ CreateToggle(scanTab, "1. SPIRAL SCAN", function()
                 end
                 pcall(function() LocalPlayer:RequestStreamAroundAsync(hrp.Position) end)
                 task.wait(SCAN.WAIT_AT_POINT)
-                if foundObject then
-                    AddLog("★ ЦЕЛЬ НАЙДЕНА!")
-                    break
-                end
+                if foundObject then AddLog("★ ЦЕЛЬ НАЙДЕНА!") break end
             end
-            if x == z or (x < 0 and x == -z) or (x > 0 and x == 1 - z) then
-                dx, dz = -dz, dx
-            end
+            if x == z or (x < 0 and x == -z) or (x > 0 and x == 1 - z) then dx, dz = -dz, dx end
             x, z = x + dx, z + dz
         end
         scanEnabled = false
@@ -509,7 +496,6 @@ CreateToggle(scanTab, "3. FORCE OPEN CHEST", function()
     local hrp = getHRP()
     if not hrp then AddLog("HRP не найден", true) return end
     if not foundObject then AddLog("Сундук не найден", true) return end
-    
     local prompt = foundObject:FindFirstChildOfClass("ProximityPrompt") or (foundObject.Parent and foundObject.Parent:FindFirstChildOfClass("ProximityPrompt"))
     if not prompt then
         for _, c in ipairs(foundObject:GetDescendants()) do
@@ -517,7 +503,6 @@ CreateToggle(scanTab, "3. FORCE OPEN CHEST", function()
         end
     end
     if not prompt then AddLog("Prompt не найден", true) return end
-    
     AddLog("CFrame Spoofing...")
     local spoofActive = true
     local oldIndex
@@ -543,15 +528,12 @@ local farmTab = tabContents["FARM"]
 CreateToggle(farmTab, "1. AUTO-UPGRADE КОСТРА", function()
     autoUpgradeEnabled = not autoUpgradeEnabled
     AddLog("Auto-Upgrade: " .. (autoUpgradeEnabled and "ВКЛ" or "ВЫКЛ"))
-    
     if autoUpgradeEnabled then
         task.spawn(function()
             while autoUpgradeEnabled do
                 task.wait(0.5)
                 local hrp = getHRP()
                 if not hrp then continue end
-                
-                -- Ищем дрова
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if not autoUpgradeEnabled then break end
                     local n = string.lower(obj.Name)
@@ -569,8 +551,6 @@ CreateToggle(farmTab, "1. AUTO-UPGRADE КОСТРА", function()
                         end
                     end
                 end
-                
-                -- ТП к костру
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if not autoUpgradeEnabled then break end
                     local n = string.lower(obj.Name)
@@ -594,7 +574,6 @@ end)
 CreateToggle(farmTab, "2. KILL AURA", function()
     killAuraEnabled = not killAuraEnabled
     AddLog("Kill Aura: " .. (killAuraEnabled and "ВКЛ" or "ВЫКЛ"))
-    
     if killAuraEnabled then
         killAuraConnection = RunService.Heartbeat:Connect(function()
             if not killAuraEnabled then return end
@@ -624,33 +603,69 @@ end)
 -- ========== DEBUG TAB ==========
 local debugTab = tabContents["DEBUG"]
 
-CreateToggle(debugTab, "1. ПОКАЗАТЬ ВСЁ", function()
-    AddLog("=== DEBUG ===")
-    local woodCount, fireCount, cultistCount = 0, 0, 0
+-- УМНЫЙ DEBUG — только уникальные имена
+CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА (ДРОВА/КОСТЁР/NPC)", function()
+    AddLog("=== УНИКАЛЬНЫЕ ИМЕНА ===")
+    
+    local woodNames = {}
+    local fireNames = {}
+    local npcNames = {}
+    
     for _, obj in ipairs(workspace:GetDescendants()) do
         local n = string.lower(obj.Name)
-        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch")) and not obj:IsA("Bone") then
-            woodCount = woodCount + 1
-            AddLog("Wood: " .. obj:GetFullName())
+        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch") or string.find(n, "log")) and not obj:IsA("Bone") then
+            woodNames[obj.Name] = (woodNames[obj.Name] or 0) + 1
         end
-        if (string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit")) and not obj:IsA("Bone") then
-            fireCount = fireCount + 1
-            AddLog("Fire: " .. obj:GetFullName())
+        if (string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit") or string.find(n, "bonfire")) and not obj:IsA("Bone") and not string.find(n, "light") and not string.find(n, "particle") then
+            fireNames[obj.Name] = (fireNames[obj.Name] or 0) + 1
         end
     end
+    
     local chars = workspace:FindFirstChild("Characters")
     if chars then
         for _, npc in ipairs(chars:GetChildren()) do
             if npc:IsA("Model") and npc:FindFirstChildOfClass("Humanoid") then
-                cultistCount = cultistCount + 1
-                AddLog("NPC: " .. npc.Name)
+                npcNames[npc.Name] = (npcNames[npc.Name] or 0) + 1
             end
         end
     end
-    AddLog("Wood: " .. woodCount .. " | Fire: " .. fireCount .. " | NPC: " .. cultistCount)
+    
+    AddLog("--- ДРОВА ---")
+    for name, count in pairs(woodNames) do
+        AddLog("  " .. name .. " (x" .. count .. ")")
+    end
+    
+    AddLog("--- КОСТЁР ---")
+    for name, count in pairs(fireNames) do
+        AddLog("  " .. name .. " (x" .. count .. ")")
+    end
+    
+    AddLog("--- NPC ---")
+    for name, count in pairs(npcNames) do
+        AddLog("  " .. name .. " (x" .. count .. ")")
+    end
+    
+    AddLog("=== КОНЕЦ ===")
 end)
 
-CreateToggle(debugTab, "2. СКАН REMOTES", function()
+CreateToggle(debugTab, "2. ПОКАЗАТЬ ИНСТРУМЕНТЫ", function()
+    AddLog("=== ИНСТРУМЕНТЫ ===")
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then AddLog("Backpack: " .. tool.Name) end
+        end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then AddLog("Equipped: " .. tool.Name) end
+        end
+    end
+    AddLog("=== КОНЕЦ ===")
+end)
+
+CreateToggle(debugTab, "3. СКАН REMOTES", function()
     AddLog("=== REMOTES ===")
     local rs = game:GetService("ReplicatedStorage")
     for _, obj in ipairs(rs:GetDescendants()) do
@@ -659,10 +674,24 @@ CreateToggle(debugTab, "2. СКАН REMOTES", function()
     end
 end)
 
-CreateToggle(debugTab, "3. КОПИРОВАТЬ ЛОГ", function()
-    if setclipboard then
-        setclipboard(fullLog)
-        AddLog("Лог скопирован!")
+-- ИСПРАВЛЕННОЕ КОПИРОВАНИЕ (только последние 50 строк)
+CreateToggle(debugTab, "4. КОПИРОВАТЬ ЛОГ (безопасно)", function()
+    AddLog("Копирую последние 50 строк...")
+    local toCopy = ""
+    for i = math.max(1, #logLines - 50), #logLines do
+        toCopy = toCopy .. logLines[i]
+    end
+    
+    local success = false
+    pcall(function()
+        if setclipboard then setclipboard(toCopy) success = true
+        elseif toclipboard then toclipboard(toCopy) success = true end
+    end)
+    
+    if success then
+        AddLog("Скопировано " .. math.min(50, #logLines) .. " строк!")
+    else
+        AddLog("setclipboard не работает", true)
     end
 end)
 
@@ -674,13 +703,11 @@ MinimizeBtn.MouseButton1Click:Connect(function()
         TabsBar.Visible = false
         ContentArea.Visible = false
         LogFrame.Visible = false
-        AddLog("Свёрнуто")
     else
         TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 320)}):Play()
         TabsBar.Visible = true
         ContentArea.Visible = true
         LogFrame.Visible = true
-        AddLog("Развёрнуто")
     end
 end)
 
@@ -725,4 +752,5 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v4.2 COMPACT загружен!")
+AddLog("v4.3 FIXED загружен!")
+AddLog("DEBUG → '1. ПОКАЗАТЬ ИМЕНА'")
