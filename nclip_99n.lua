@@ -1,16 +1,17 @@
 --[[
-    NEON v3.2 — STRONGHOLD BUILDING TP
+    NEON v3.3 — FULL EDITION
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
     - ESP (H)
-    - Anti-TP (B)
+    - Anti-TP Enhanced (B)
     - Night Vision (N)
     - Clean World (R)
     - Load Chunks (C)
     - TP to Chest (T)
-    - TP to Stronghold Building (Y)  <-- ИСПРАВЛЕНО
+    - TP to Stronghold Building (Y)
+    - Scan Remotes (U)
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -39,8 +40,8 @@ local CONFIG = {
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
     TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
     GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
-    -- Ключевые слова для поиска Стронгхолда (здания)
-    STRONGHOLD_BUILDING_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding", "stronghold_building"},
+    STRONGHOLD_BUILDING_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding"},
+    CHEST_KEYWORDS = {"chestdef", "diamondchest", "strongholdchest", "item chest", "stonechest", "mossy chest"},
 }
 
 -- ========== STATE ==========
@@ -53,6 +54,8 @@ local worldCleanEnabled = false
 local bypassConnection = nil
 local originalLighting = {}
 local removedObjects = {}
+local savedPosition = Vector3.new(0, 0, 0)
+local savedCFrame = CFrame.new()
 
 -- ========== UI ==========
 local ScreenGui = Instance.new("ScreenGui")
@@ -63,8 +66,8 @@ pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 360)
-Main.Position = UDim2.new(0.5, -140, 0.15, 0)
+Main.Size = UDim2.new(0, 280, 0, 420)
+Main.Position = UDim2.new(0.5, -140, 0.1, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -80,10 +83,10 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON v3.2 STRONGHOLD TP ★"
+Title.Text = "★ NEON v3.3 FULL ★"
 Title.TextColor3 = Color3.fromRGB(0, 255, 200)
 Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 11
+Title.TextSize = 12
 Title.BorderSizePixel = 0
 Title.Parent = Main
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
@@ -116,6 +119,8 @@ local WorldBtn = CreateButton("CLEAN WORLD: ВЫКЛ (R)", 210, Color3.fromRGB(2
 local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", 243, Color3.fromRGB(0, 255, 100))
 local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(255, 100, 200))
 local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ (C)", 309, Color3.fromRGB(0, 200, 255))
+local RemoteBtn = CreateButton("СКАН REMOTES (U)", 342, Color3.fromRGB(255, 200, 100))
+local ResetTpBtn = CreateButton("СБРОСИТЬ ANTI-TP (R)", 375, Color3.fromRGB(255, 100, 100))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -169,20 +174,56 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- ========== ANTI-TP ==========
+-- ========== ANTI-TP (ENHANCED) ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
     if bypassConnection then bypassConnection:Disconnect() end
-    local lastCFrame = hrp.CFrame
+    
+    savedPosition = hrp.Position
+    savedCFrame = hrp.CFrame
+    
+    -- Безопасный хук через metatable (если поддерживается)
+    local success, mt = pcall(function() return getrawmetatable(game) end)
+    if success and mt then
+        local oldIndex = mt.__index
+        local oldNewIndex = mt.__newindex
+        setreadonly(mt, false)
+        
+        mt.__index = newcclosure(function(self, key)
+            if self == hrp and key == "CFrame" then return savedCFrame end
+            if self == hrp and key == "Position" then return savedPosition end
+            return oldIndex(self, key)
+        end)
+        
+        mt.__newindex = newcclosure(function(self, key, value)
+            if self == hrp and key == "CFrame" then
+                savedCFrame = value
+                savedPosition = value.Position
+                return oldNewIndex(self, key, value)
+            end
+            return oldNewIndex(self, key, value)
+        end)
+        
+        setreadonly(mt, true)
+    end
+    
+    -- Мониторинг позиции
     bypassConnection = RunService.Heartbeat:Connect(function()
         if not bypassEnabled then return end
         local h = getHRP()
         if not h then return end
-        local dist = (h.Position - lastCFrame.Position).Magnitude
-        if dist > 50 and flyEnabled then h.CFrame = lastCFrame
-        else lastCFrame = h.CFrame end
+        
+        local dist = (h.Position - savedPosition).Magnitude
+        if dist > 100 then
+            h.CFrame = savedCFrame
+        else
+            savedCFrame = h.CFrame
+            savedPosition = h.Position
+        end
     end)
+    
+    print("[ANTI-TP] Enhanced bypass enabled")
 end
 
 local function setBypass(state)
@@ -333,6 +374,20 @@ local function loadAllChunks()
     print("[CHUNK] Done")
 end
 
+-- ========== SCAN REMOTES ==========
+local function scanRemotes()
+    print("[SCAN] === REMOTES ===")
+    local rs = game:GetService("ReplicatedStorage")
+    for _, obj in ipairs(rs:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            print("  RemoteEvent: " .. obj:GetFullName())
+        elseif obj:IsA("RemoteFunction") then
+            print("  RemoteFunction: " .. obj:GetFullName())
+        end
+    end
+    print("[SCAN] === END ===")
+end
+
 -- ========== ESP ==========
 local espObjects = {}
 
@@ -379,6 +434,7 @@ local function updateESP()
     clearESP()
     if not espEnabled then return end
 
+    -- Items
     local items = workspace:FindFirstChild("Items")
     if items then
         for _, obj in ipairs(items:GetChildren()) do
@@ -392,19 +448,20 @@ local function updateESP()
         end
     end
 
+    -- Map
     local map = workspace:FindFirstChild("Map")
     if map then
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                -- Стронгхолд — розовым
+                -- Стронгхолд
                 for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
                     if n:find(kw) then
                         createESP(landmark, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD ★")
                         break
                     end
                 end
-                -- Остальные здания — синим
+                -- Здания
                 if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
                     createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name)
                 end
@@ -412,6 +469,7 @@ local function updateESP()
         end
     end
 
+    -- NPC
     local chars = workspace:FindFirstChild("Characters")
     if chars then
         for _, npc in ipairs(chars:GetChildren()) do
@@ -428,16 +486,14 @@ local function setESP(state)
     if state then updateESP() else clearESP() end
 end
 
--- ========== FIND STRONGHOLD BUILDING ==========
+-- ========== FIND STRONGHOLD ==========
 local function findStrongholdBuilding()
     local found = {}
-    -- Ищем по всей карте
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") or obj:IsA("BasePart") then
             local n = obj.Name:lower()
             for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
                 if n:find(kw) then
-                    -- Исключаем кости, NPC, персонажей
                     if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) 
                        and not obj:IsA("Bone") 
                        and not obj:IsA("Motor6D")
@@ -450,7 +506,6 @@ local function findStrongholdBuilding()
         end
     end
     
-    -- Если нашли несколько — возвращаем ближайший
     if #found > 0 then
         local hrp = getHRP()
         if not hrp then return found[1] end
@@ -469,7 +524,6 @@ local function findStrongholdBuilding()
         end
         return nearest
     end
-    
     return nil
 end
 
@@ -504,8 +558,18 @@ local function teleportTo(target)
     else
         return false
     end
-    hrp.CFrame = pos + Vector3.new(0, 5, 0)
+    -- Сохраняем позицию для Anti-TP
+    savedCFrame = pos + Vector3.new(0, 5, 0)
+    savedPosition = savedCFrame.Position
+    hrp.CFrame = savedCFrame
     return true
+end
+
+-- ========== RESET ANTI-TP ==========
+local function resetAntiTP()
+    savedCFrame = CFrame.new(0, 0, 0)
+    savedPosition = Vector3.new(0, 0, 0)
+    print("[ANTI-TP] Reset")
 end
 
 -- ========== INPUT ==========
@@ -518,6 +582,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.N then setNightVision(not nightVisionEnabled)
     elseif input.KeyCode == Enum.KeyCode.R then setWorldClean(not worldCleanEnabled)
     elseif input.KeyCode == Enum.KeyCode.C then loadAllChunks()
+    elseif input.KeyCode == Enum.KeyCode.U then scanRemotes()
     elseif input.KeyCode == Enum.KeyCode.T then
         local chest = findNearestChest()
         if chest then teleportTo(chest) end
@@ -527,7 +592,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             teleportTo(strong)
             print("[STRONGHOLD] TP to: " .. strong:GetFullName())
         else
-            print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+            print("[STRONGHOLD] Building not found!")
         end
     end
 end)
@@ -549,7 +614,7 @@ TpStrongBtn.MouseButton1Click:Connect(function()
         teleportTo(strong)
         print("[STRONGHOLD] TP to: " .. strong:GetFullName())
     else
-        print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+        print("[STRONGHOLD] Building not found!")
     end
 end)
 ChunkBtn.MouseButton1Click:Connect(function()
@@ -557,6 +622,18 @@ ChunkBtn.MouseButton1Click:Connect(function()
     ChunkBtn.Text = "ЧАНКИ ЗАГРУЖЕНЫ"
     task.wait(2)
     ChunkBtn.Text = "ЗАГРУЗИТЬ ЧАНКИ (C)"
+end)
+RemoteBtn.MouseButton1Click:Connect(function()
+    scanRemotes()
+    RemoteBtn.Text = "REMOTES В КОНСОЛИ"
+    task.wait(2)
+    RemoteBtn.Text = "СКАН REMOTES (U)"
+end)
+ResetTpBtn.MouseButton1Click:Connect(function()
+    resetAntiTP()
+    ResetTpBtn.Text = "ANTI-TP СБРОШЕН"
+    task.wait(2)
+    ResetTpBtn.Text = "СБРОСИТЬ ANTI-TP"
 end)
 
 -- ========== AUTO-UPDATE ESP ==========
@@ -569,10 +646,10 @@ end)
 
 -- ========== APPEAR ==========
 Main.BackgroundTransparency = 1
-Main.Position = UDim2.new(0.5, -140, 0.15, 30)
+Main.Position = UDim2.new(0.5, -140, 0.1, 30)
 TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
     BackgroundTransparency = 0,
-    Position = UDim2.new(0.5, -140, 0.15, 0)
+    Position = UDim2.new(0.5, -140, 0.1, 0)
 }):Play()
 
-print("[NEON] v3.2 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, T=chest, Y=stronghold")
+print("[NEON] v3.3 FULL loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, U=remotes, T=chest, Y=stronghold")
