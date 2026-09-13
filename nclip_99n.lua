@@ -1,19 +1,19 @@
 --[[
-    GHOSTWARE v3.7 — STREAMING BYPASS + SMART CHEST DETECTION
+    GHOSTWARE v3.8 — SMOOTH SCAN + SMART ESP
     Author: I.S.-1 + Gemini Fix
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H) — Diamond Chest: проверка родителя
+    - ESP (H) — Diamond Chest: cyan, Stronghold: pink
     - Anti-TP (B)
     - Night Vision (N)
-    - Grid Scan (X) — с RequestStreamAroundAsync
+    - Smooth Grid Scan (X) — Tween вместо ТП
     - Stop Scan (Z)
     - TP to Found (Y)
     - Debug (J)
     - Scan Remotes (R)
     - Block Remote (K)
-    - Smart Force Open (O) — CFrame Spoofing
+    - Force Open (O)
     - Copy Logs (C)
 --]]
 
@@ -33,8 +33,9 @@ local SCAN = {
     Y = -50,
     STEP = 200,
     RANGE = 2000,
-    WAIT = 0.3,         -- уменьшил с 0.5 до 0.3, но добавил запрос стриминга
-    STREAM_WAIT = 0.2,  -- задержка после запроса стриминга
+    WAIT = 0.2,
+    TWEEN_TIME = 0.15,  -- время плавного перелёта
+    STREAM_WAIT = 0.15,
 }
 
 -- ========== STATE ==========
@@ -49,11 +50,9 @@ local bypassConnection = nil
 local savedPos = nil
 local savedCF = nil
 local highlightObjects = {}
-local espMode = "highlight"
 local fullLog = ""
 local originalLighting = {}
 local espConnections = {}
-local remoteHookConnection = nil
 local remoteBlockEnabled = false
 
 -- ========== CLEANUP ==========
@@ -103,7 +102,7 @@ Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 10)
-Title.Text = "GhostWare v3.7\nStreaming Bypass"
+Title.Text = "GhostWare v3.8\nSmooth Scan"
 Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
@@ -131,7 +130,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "> v3.7 загружен.\n"
+LogText.Text = "> v3.8 загружен.\n"
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -181,7 +180,7 @@ local FlyBtn, FlyInd = CreateToggle("1. FLY & NOCLIP")
 local EspBtn, EspInd = CreateToggle("2. ESP (H)")
 local AntiTpBtn, AntiTpInd = CreateToggle("3. ANTI-TP (B)")
 local NightBtn, NightInd = CreateToggle("4. NIGHT VISION (N)")
-local ScanBtn, ScanInd = CreateToggle("5. GRID SCAN (X)")
+local ScanBtn, ScanInd = CreateToggle("5. SMOOTH GRID SCAN (X)")
 local TpBtn, TpInd = CreateToggle("6. TP К НАЙДЕННОМУ (Y)")
 local StopBtn, StopInd = CreateToggle("7. СТОП СКАН (Z)")
 local DebugBtn, DebugInd = CreateToggle("8. ПОКАЗАТЬ ВСЁ (J)")
@@ -256,7 +255,7 @@ RunService.RenderStepped:Connect(function()
     else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ========== 2. ESP ==========
+-- ========== 2. ESP (SMART) ==========
 local function clearESP()
     for _, hl in ipairs(highlightObjects) do
         if hl and hl.Parent then hl:Destroy() end
@@ -273,34 +272,22 @@ local function createESP(target, color, label, big)
     end
     if not adornee then return end
     
-    if espMode == "highlight" then
-        local success = pcall(function()
-            local hl = Instance.new("Highlight")
-            hl.Name = "GhostWareESP"
-            hl.Adornee = target
-            hl.FillColor = color
-            hl.OutlineColor = color
-            hl.FillTransparency = 0.4
-            hl.OutlineTransparency = 0
-            pcall(function()
-                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            end)
-            hl.Parent = target
-            table.insert(highlightObjects, hl)
+    local success = pcall(function()
+        local hl = Instance.new("Highlight")
+        hl.Name = "GhostWareESP"
+        hl.Adornee = target
+        hl.FillColor = color
+        hl.OutlineColor = color
+        hl.FillTransparency = 0.4
+        hl.OutlineTransparency = 0
+        pcall(function()
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         end)
-        
-        if not success then
-            local box = Instance.new("BoxHandleAdornment")
-            box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
-            box.Transparency = 0.4
-            box.Color3 = color
-            box.AlwaysOnTop = true
-            box.ZIndex = 10
-            box.Adornee = adornee
-            box.Parent = adornee
-            table.insert(highlightObjects, box)
-        end
-    else
+        hl.Parent = target
+        table.insert(highlightObjects, hl)
+    end)
+    
+    if not success then
         local box = Instance.new("BoxHandleAdornment")
         box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
         box.Transparency = 0.4
@@ -337,33 +324,27 @@ local function createESP(target, color, label, big)
     end
 end
 
--- ========== SMART DIAMOND CHEST DETECTION ==========
+-- УМНАЯ ПРОВЕРКА DIAMOND CHEST
 local function isDiamondChest(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
     
-    -- Проверка 1: Прямое совпадение имени
+    -- 1. Прямое совпадение
     if string.find(name, "diamond") and string.find(name, "chest") then
         return true
     end
     
-    -- Проверка 2: Если это обычный Chest, но он лежит внутри Stronghold
+    -- 2. Chest внутри Stronghold
     if name == "chest" and obj.Parent then
-        local parentName = string.lower(obj.Parent.Name)
-        if string.find(parentName, "stronghold") or string.find(parentName, "cultist") then
+        local pName = string.lower(obj.Parent.Name)
+        if string.find(pName, "stronghold") or string.find(pName, "cultist") then
             return true
         end
-        -- Проверяем родителей выше
-        local p = obj.Parent
-        for i = 1, 5 do
-            if p and p.Name then
-                local pn = string.lower(p.Name)
-                if string.find(pn, "stronghold") or string.find(pn, "cultist") or string.find(pn, "ritual") then
-                    return true
-                end
-                p = p.Parent
-            else
-                break
+        local gp = obj.Parent.Parent
+        if gp and gp.Name then
+            local gpn = string.lower(gp.Name)
+            if string.find(gpn, "stronghold") or string.find(gpn, "cultist") then
+                return true
             end
         end
     end
@@ -374,7 +355,7 @@ end
 local function isStronghold(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
-    if string.find(name, "stronghold") or string.find(name, "cultist") or string.find(name, "ritual") or string.find(name, "altar") then
+    if string.find(name, "stronghold") or string.find(name, "cultist") then
         return true
     end
     return false
@@ -383,7 +364,7 @@ end
 local function isNormalChest(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
-    if string.find(name, "chest") and not string.find(name, "diamond") and not isDiamondChest(obj) then
+    if string.find(name, "chest") and not isDiamondChest(obj) then
         return true
     end
     return false
@@ -398,13 +379,13 @@ local function updateESP()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if isDiamondChest(obj) then
             if not obj:IsA("Bone") then
-                createESP(obj, Color3.fromRGB(0, 191, 255), "💎 DIAMOND CHEST 💎", true)
+                createESP(obj, Color3.fromRGB(0, 240, 255), "💎 DIAMOND CHEST 💎", true)
                 count = count + 1
                 diamondCount = diamondCount + 1
             end
         elseif isStronghold(obj) then
             if not obj:IsA("Bone") then
-                createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
+                createESP(obj, Color3.fromRGB(255, 0, 255), "🏰 STRONGHOLD 🏰", true)
                 count = count + 1
             end
         elseif isNormalChest(obj) then
@@ -415,7 +396,7 @@ local function updateESP()
         end
     end
     
-    AddLog("ESP: подсвечено " .. count .. " (Diamond: " .. diamondCount .. ")")
+    AddLog("ESP: " .. count .. " (Diamond: " .. diamondCount .. ")")
 end
 
 EspBtn.MouseButton1Click:Connect(function()
@@ -428,11 +409,11 @@ EspBtn.MouseButton1Click:Connect(function()
         local conn = workspace.DescendantAdded:Connect(function(obj)
             if not espEnabled then return end
             if isDiamondChest(obj) then
-                AddLog("★ DIAMOND CHEST ПОЯВИЛСЯ: " .. obj:GetFullName())
-                createESP(obj, Color3.fromRGB(0, 191, 255), "💎 DIAMOND CHEST 💎", true)
+                AddLog("★ DIAMOND CHEST: " .. obj:GetFullName())
+                createESP(obj, Color3.fromRGB(0, 240, 255), "💎 DIAMOND CHEST 💎", true)
             elseif isStronghold(obj) then
-                AddLog("★ STRONGHOLD ПОЯВИЛСЯ: " .. obj:GetFullName())
-                createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
+                AddLog("★ STRONGHOLD: " .. obj:GetFullName())
+                createESP(obj, Color3.fromRGB(255, 0, 255), "🏰 STRONGHOLD 🏰", true)
             end
         end)
         table.insert(espConnections, conn)
@@ -547,7 +528,7 @@ NightBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ========== 5. GRID SCAN (С STREAMING BYPASS) ==========
+-- ========== 5. SMOOTH GRID SCAN (TWEEN ВМЕСТО ТП) ==========
 local function findTarget()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if isDiamondChest(obj) and not obj:IsA("Bone") then
@@ -572,7 +553,7 @@ ScanBtn.MouseButton1Click:Connect(function()
     
     scanEnabled = true
     TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(200, 0, 150)}):Play()
-    AddLog("=== GRID SCAN + STREAMING BYPASS ===")
+    AddLog("=== SMOOTH GRID SCAN (TWEEN) ===")
     
     task.spawn(function()
         local startPos = hrp.Position
@@ -584,20 +565,26 @@ ScanBtn.MouseButton1Click:Connect(function()
             for z = -SCAN.RANGE, SCAN.RANGE, SCAN.STEP do
                 if not scanEnabled then break end
                 
-                local pos = Vector3.new(startPos.X + x, SCAN.Y, startPos.Z + z)
-                hrp.CFrame = CFrame.new(pos)
+                local targetPosition = Vector3.new(startPos.X + x, SCAN.Y, startPos.Z + z)
+                
+                -- ПЛАВНЫЙ ПЕРЕЛЁТ ЧЕРЕЗ TWEEN
+                local tweenInfo = TweenInfo.new(SCAN.TWEEN_TIME, Enum.EasingStyle.Linear)
+                local tween = TweenService:Create(hrp, tweenInfo, {CFrame = CFrame.new(targetPosition)})
+                tween:Play()
+                tween.Completed:Wait() -- ждём, пока долетит
+                
                 totalPoints = totalPoints + 1
                 
-                -- ===== STREAMING BYPASS =====
+                -- ПРИНУДИТЕЛЬНЫЙ ЗАПРОС СТРИМИНГА
                 pcall(function()
-                    LocalPlayer:RequestStreamAroundAsync(pos)
+                    LocalPlayer:RequestStreamAroundAsync(targetPosition)
                 end)
                 
                 if totalPoints % 10 == 0 then
-                    AddLog(string.format("Точка %d: X=%.0f Z=%.0f", totalPoints, pos.X, pos.Z))
+                    AddLog(string.format("Точка %d: X=%.0f Z=%.0f", totalPoints, targetPosition.X, targetPosition.Z))
                 end
                 
-                task.wait(SCAN.STREAM_WAIT) -- ждём прогрузку
+                task.wait(SCAN.STREAM_WAIT)
                 
                 local target = findTarget()
                 if target then
@@ -614,7 +601,10 @@ ScanBtn.MouseButton1Click:Connect(function()
                     AddLog("★ DIAMOND CHEST НАЙДЕН: " .. target:GetFullName())
                     AddLog(string.format("Позиция: X=%.0f Y=%.0f Z=%.0f", targetPos.X, targetPos.Y, targetPos.Z))
                     
-                    hrp.CFrame = CFrame.new(targetPos.X, SCAN.Y, targetPos.Z)
+                    -- Плавно подлетаем к сундуку
+                    local finalTween = TweenService:Create(hrp, TweenInfo.new(0.3), {CFrame = CFrame.new(targetPos.X, SCAN.Y, targetPos.Z)})
+                    finalTween:Play()
+                    finalTween.Completed:Wait()
                     
                     scanEnabled = false
                     AddLog("Скан завершён! Включи ESP (H).")
@@ -679,7 +669,7 @@ DebugBtn.MouseButton1Click:Connect(function()
     end
     AddLog("Всего Diamond Chest: " .. count)
     if count == 0 then
-        AddLog("НЕ ПРОГРУЖЕН. Используй Grid Scan (X)!", true)
+        AddLog("НЕ ПРОГРУЖЕН. Используй Smooth Scan (X)!", true)
     end
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 200, 0)}):Play()
     task.wait(1)
@@ -757,14 +747,13 @@ BlockRemoteBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ========== 12. SMART FORCE OPEN (CFrame Spoofing) ==========
+-- ========== 12. FORCE OPEN (CFrame Spoofing) ==========
 ForceChestBtn.MouseButton1Click:Connect(function()
-    AddLog("=== SMART FORCE OPEN ===")
+    AddLog("=== FORCE OPEN ===")
     
     local hrp = getHRP()
     if not hrp then AddLog("HRP не найден", true) return end
     
-    -- Ищем Diamond Chest
     local targetChest = nil
     for _, obj in pairs(workspace:GetDescendants()) do
         if isDiamondChest(obj) then
@@ -774,18 +763,16 @@ ForceChestBtn.MouseButton1Click:Connect(function()
     end
     
     if not targetChest then
-        AddLog("Diamond Chest не найден в Workspace!", true)
+        AddLog("Diamond Chest не найден!", true)
         return
     end
     
     AddLog("Найден: " .. targetChest:GetFullName())
     
-    -- Ищем ProximityPrompt
     local prompt = targetChest:FindFirstChildOfClass("ProximityPrompt") 
                    or (targetChest.Parent and targetChest.Parent:FindFirstChildOfClass("ProximityPrompt"))
     
     if not prompt then
-        -- Ищем глубже
         for _, child in ipairs(targetChest:GetDescendants()) do
             if child:IsA("ProximityPrompt") then
                 prompt = child
@@ -799,13 +786,8 @@ ForceChestBtn.MouseButton1Click:Connect(function()
         return
     end
     
-    AddLog("Prompt найден: " .. prompt:GetFullName())
-    AddLog("Попытка взлома...")
-    
-    -- Шаг А: Запоминаем реальную позицию
     local originalCFrame = hrp.CFrame
     
-    -- Шаг Б: Телепорт к сундуку
     local chestPos
     if targetChest:IsA("Model") then
         chestPos = targetChest.PrimaryPart and targetChest.PrimaryPart.Position or targetChest:GetPivot().Position
@@ -816,24 +798,20 @@ ForceChestBtn.MouseButton1Click:Connect(function()
     hrp.CFrame = CFrame.new(chestPos + Vector3.new(0, 2, 0))
     task.wait(0.05)
     
-    -- Шаг В: Прожимаем prompt
     pcall(function()
         fireproximityprompt(prompt)
     end)
     
     task.wait(0.05)
-    
-    -- Шаг Г: Возвращаем обратно
     hrp.CFrame = originalCFrame
     
-    AddLog("Пакет отправлен, возвращено исходное положение!")
+    AddLog("Пакет отправлен!")
     
     TweenService:Create(ForceChestInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
     task.wait(1)
     TweenService:Create(ForceChestInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
-AddLog("GhostWare v3.7 загружен!")
-AddLog("Streaming Bypass в Grid Scan")
+AddLog("GhostWare v3.8 загружен!")
+AddLog("Smooth Scan (Tween)")
 AddLog("Smart Diamond Chest Detection")
-AddLog("CFrame Spoofing в Force Open (O)")
