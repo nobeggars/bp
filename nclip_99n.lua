@@ -1,12 +1,12 @@
 --[[
-    GHOSTWARE v3.4 — DIAMOND CHEST + NIGHT VISION
+    GHOSTWARE v3.5 — DIAMOND CHEST HUNTER
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H) — Diamond Chest: bright cyan
+    - ESP (H) — Diamond Chest: bright cyan, auto-detect on spawn
     - Anti-TP (B)
-    - Night Vision (N)  <-- НОВОЕ
+    - Night Vision (N)
     - Grid Scan (X)
     - Stop Scan (Z)
     - TP to Found (Y)
@@ -31,9 +31,6 @@ local SCAN = {
     STEP = 200,
     RANGE = 2000,
     WAIT = 0.5,
-    -- ВАЖНО: Diamond Chest с пробелом!
-    DIAMOND_CHEST_NAME = "Diamond Chest",
-    KEYWORDS = {"diamond chest", "chestdef", "stronghold", "cultist", "ritual", "altar"}
 }
 
 -- ========== STATE ==========
@@ -51,8 +48,9 @@ local highlightObjects = {}
 local espMode = "highlight"
 local fullLog = ""
 local originalLighting = {}
+local espConnections = {}
 
--- ========== CLEANUP (безопасный) ==========
+-- ========== CLEANUP ==========
 pcall(function()
     if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 end)
@@ -99,7 +97,7 @@ Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 10)
-Title.Text = "GhostWare v3.4\nDiamond Edition"
+Title.Text = "GhostWare v3.5\nDiamond Hunter"
 Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
@@ -127,7 +125,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "> v3.4 загружен.\n"
+LogText.Text = "> v3.5 загружен.\n"
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -249,7 +247,7 @@ RunService.RenderStepped:Connect(function()
     else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ========== 2. ESP (DIAMOND CHEST ЯРКО-ГОЛУБОЙ) ==========
+-- ========== 2. ESP (DIAMOND CHEST — ЧАСТИЧНОЕ СОВПАДЕНИЕ) ==========
 local function clearESP()
     for _, hl in ipairs(highlightObjects) do
         if hl and hl.Parent then hl:Destroy() end
@@ -330,37 +328,60 @@ local function createESP(target, color, label, big)
     end
 end
 
+-- ФУНКЦИЯ ПРОВЕРКИ: ЯВЛЯЕТСЯ ЛИ ОБЪЕКТ DIAMOND CHEST
+local function isDiamondChest(obj)
+    if not obj or not obj.Name then return false end
+    local name = string.lower(obj.Name)
+    -- Частичное совпадение: "diamond" И "chest"
+    if string.find(name, "diamond") and string.find(name, "chest") then
+        return true
+    end
+    return false
+end
+
+-- Проверка на Stronghold / Cultist
+local function isStronghold(obj)
+    if not obj or not obj.Name then return false end
+    local name = string.lower(obj.Name)
+    if string.find(name, "stronghold") or string.find(name, "cultist") or string.find(name, "ritual") or string.find(name, "altar") then
+        return true
+    end
+    return false
+end
+
+-- Проверка на обычный сундук
+local function isNormalChest(obj)
+    if not obj or not obj.Name then return false end
+    local name = string.lower(obj.Name)
+    if string.find(name, "chest") and not string.find(name, "diamond") then
+        return true
+    end
+    return false
+end
+
 local function updateESP()
     clearESP()
     if not espEnabled then return end
     
     local count = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local n = obj.Name:lower()
-            
-            -- DIAMOND CHEST (ярко-голубой)
-            if n == "diamond chest" or n == "diamondchest" or n == "diamond_chest" then
-                if not obj:IsA("Bone") then
-                    createESP(obj, Color3.fromRGB(0, 255, 255), "💎 DIAMOND CHEST 💎", true)
-                    count = count + 1
-                end
-            -- Stronghold / cultist
-            elseif n == "stronghold" or n:find("cultist") or n:find("ritual") or n:find("altar") then
+        -- DIAMOND CHEST (ярко-голубой)
+        if isDiamondChest(obj) then
+            if not obj:IsA("Bone") then
+                createESP(obj, Color3.fromRGB(0, 191, 255), "💎 DIAMOND CHEST 💎", true)
+                count = count + 1
+            end
+        -- Stronghold
+        elseif isStronghold(obj) then
+            if not obj:IsA("Bone") then
                 createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
                 count = count + 1
-            -- ChestDEF (старый вариант)
-            elseif n == "chestdef" then
-                if not obj:IsA("Bone") then
-                    createESP(obj, Color3.fromRGB(0, 255, 255), "💎 CHESTDEF 💎", true)
-                    count = count + 1
-                end
-            -- Обычные сундуки
-            elseif n:find("chest") and not n:find("def") then
-                if not obj:IsA("Bone") then
-                    createESP(obj, Color3.fromRGB(255, 200, 0), "Chest", false)
-                    count = count + 1
-                end
+            end
+        -- Обычные сундуки
+        elseif isNormalChest(obj) then
+            if not obj:IsA("Bone") then
+                createESP(obj, Color3.fromRGB(255, 200, 0), "Chest", false)
+                count = count + 1
             end
         end
     end
@@ -374,10 +395,27 @@ EspBtn.MouseButton1Click:Connect(function()
         TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
         AddLog("ESP ВКЛ (режим: " .. espMode .. ")")
         updateESP()
+        
+        -- ПОДПИСКА НА НОВЫЕ ОБЪЕКТЫ (для стриминга)
+        local conn = workspace.DescendantAdded:Connect(function(obj)
+            if not espEnabled then return end
+            if isDiamondChest(obj) then
+                AddLog("★ DIAMOND CHEST ПОЯВИЛСЯ: " .. obj:GetFullName())
+                createESP(obj, Color3.fromRGB(0, 191, 255), "💎 DIAMOND CHEST 💎", true)
+            elseif isStronghold(obj) then
+                AddLog("★ STRONGHOLD ПОЯВИЛСЯ: " .. obj:GetFullName())
+                createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
+            end
+        end)
+        table.insert(espConnections, conn)
     else
         TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
         AddLog("ESP ВЫКЛ")
         clearESP()
+        for _, conn in ipairs(espConnections) do
+            if conn then conn:Disconnect() end
+        end
+        espConnections = {}
     end
 end)
 
@@ -505,14 +543,9 @@ end)
 -- ========== 5. GRID SCAN ==========
 local function findTarget()
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local n = obj.Name:lower()
-            for _, kw in ipairs(SCAN.KEYWORDS) do
-                if n:find(kw) and not obj:IsA("Bone") then
-                    if not obj:IsDescendantOf(LocalPlayer.Character or game) then
-                        return obj
-                    end
-                end
+        if isDiamondChest(obj) and not obj:IsA("Bone") then
+            if not obj:IsDescendantOf(LocalPlayer.Character or game) then
+                return obj
             end
         end
     end
@@ -532,7 +565,7 @@ ScanBtn.MouseButton1Click:Connect(function()
     
     scanEnabled = true
     TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(200, 0, 150)}):Play()
-    AddLog("=== GRID SCAN НАЧАТ ===")
+    AddLog("=== GRID SCAN НАЧАТ (поиск Diamond Chest) ===")
     
     task.spawn(function()
         local startPos = hrp.Position
@@ -566,7 +599,7 @@ ScanBtn.MouseButton1Click:Connect(function()
                         targetPos = target.Position
                     end
                     
-                    AddLog("★ НАЙДЕНО: " .. target:GetFullName())
+                    AddLog("★ DIAMOND CHEST НАЙДЕН: " .. target:GetFullName())
                     AddLog(string.format("Позиция: X=%.0f Y=%.0f Z=%.0f", targetPos.X, targetPos.Y, targetPos.Z))
                     
                     hrp.CFrame = CFrame.new(targetPos.X, SCAN.Y, targetPos.Z)
@@ -580,7 +613,7 @@ ScanBtn.MouseButton1Click:Connect(function()
         end
         
         if not found then
-            AddLog("Ничего не найдено в радиусе " .. SCAN.RANGE, true)
+            AddLog("Diamond Chest не найден в радиусе " .. SCAN.RANGE, true)
         end
         
         TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
@@ -622,11 +655,11 @@ end)
 
 -- ========== 8. DEBUG ==========
 DebugBtn.MouseButton1Click:Connect(function()
-    AddLog("=== ПОЛНЫЙ СКАН WORKSPACE ===")
+    AddLog("=== ПОИСК DIAMOND CHEST В WORKSPACE ===")
     local count = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
-        local n = obj.Name:lower()
-        if n:find("diamond") or n:find("chest") or n:find("stronghold") or n:find("cultist") then
+        local n = string.lower(obj.Name)
+        if string.find(n, "diamond") or string.find(n, "chest") then
             if not obj:IsA("Bone") then
                 count = count + 1
                 AddLog(obj:GetFullName() .. " | " .. obj.ClassName)
@@ -634,6 +667,11 @@ DebugBtn.MouseButton1Click:Connect(function()
         end
     end
     AddLog("Всего найдено: " .. count)
+    
+    if count == 0 then
+        AddLog("Diamond Chest НЕ ПРОГРУЖЕН. Лети ближе к Стронгхолду!", true)
+    end
+    
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 200, 0)}):Play()
     task.wait(1)
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
@@ -663,6 +701,6 @@ LogBtn.MouseButton1Click:Connect(function()
     TweenService:Create(LogInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
-AddLog("GhostWare v3.4 загружен!")
-AddLog("Diamond Chest: ярко-голубой")
-AddLog("Night Vision: клавиша N")
+AddLog("GhostWare v3.5 загружен!")
+AddLog("Diamond Chest: поиск по 'diamond' + 'chest'")
+AddLog("Автопоиск при DescendantAdded")
