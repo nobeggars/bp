@@ -1,16 +1,9 @@
 --[[
-    NEON FLY + ESP + ANTI-TP v3.0 — WORLD CONTROL
+    NEON v3.1 — STRONGHOLD FIX + CHUNK LOADER
     Author: I.S.-1
-    Features:
-    - Fly (F)
-    - Noclip (G)
-    - ESP (H)
-    - Anti-TP Bypass (B)
-    - Night Vision (N)
-    - Remove Trees/Grass/Fog (R)
-    - Chunk Loader
-    - TP to chest (T)
-    - TP to stronghold (Y)
+    Fixes:
+    - TP to Stronghold: search for DiamondChest/ChestDEF/StrongholdChest in Campground AND Workspace
+    - Chunk Loader: RequestStreamAroundAsync + teleport to Campground first
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -30,8 +23,6 @@ if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiNam
 -- ========== CONFIG ==========
 local CONFIG = {
     FLY_SPEED = 80,
-    ESP_ENABLED = false,
-    ESP_COLOR = Color3.fromRGB(0, 255, 200),
     ESP_CHEST_COLOR = Color3.fromRGB(255, 200, 0),
     ESP_STRONGHOLD_COLOR = Color3.fromRGB(255, 0, 150),
     ESP_BUILDING_COLOR = Color3.fromRGB(100, 150, 255),
@@ -41,6 +32,7 @@ local CONFIG = {
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
     TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
     GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
+    STRONGHOLD_KEYWORDS = {"chestdef", "diamondchest", "strongholdchest", "stronghold"},
 }
 
 -- ========== STATE ==========
@@ -50,7 +42,6 @@ local espEnabled = false
 local bypassEnabled = false
 local nightVisionEnabled = false
 local worldCleanEnabled = false
-local savedCFrame = nil
 local bypassConnection = nil
 local originalLighting = {}
 local removedObjects = {}
@@ -81,10 +72,10 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON v3.0 WORLD CONTROL ★"
+Title.Text = "★ NEON v3.1 STRONGHOLD FIX ★"
 Title.TextColor3 = Color3.fromRGB(0, 255, 200)
 Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 12
+Title.TextSize = 11
 Title.BorderSizePixel = 0
 Title.Parent = Main
 Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
@@ -116,7 +107,7 @@ local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(
 local WorldBtn = CreateButton("CLEAN WORLD: ВЫКЛ (R)", 210, Color3.fromRGB(255, 150, 50))
 local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", 243, Color3.fromRGB(0, 255, 100))
 local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(255, 100, 200))
-local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ", 309, Color3.fromRGB(0, 200, 255))
+local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ (C)", 309, Color3.fromRGB(0, 200, 255))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -131,9 +122,7 @@ local function setFly(state)
     local hrp = getHRP()
     if hrp then
         local humanoid = hrp.Parent:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = state
-        end
+        if humanoid then humanoid.PlatformStand = state end
     end
 end
 
@@ -148,11 +137,7 @@ RunService.RenderStepped:Connect(function()
     if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
-    if move.Magnitude > 0 then
-        hrp.Velocity = move * CONFIG.FLY_SPEED
-    else
-        hrp.Velocity = Vector3.new(0, 0, 0)
-    end
+    if move.Magnitude > 0 then hrp.Velocity = move * CONFIG.FLY_SPEED else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
 -- ========== NOCLIP ==========
@@ -162,9 +147,7 @@ local function setNoclip(state)
     local char = LocalPlayer.Character
     if char then
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = not state
-            end
+            if part:IsA("BasePart") then part.CanCollide = not state end
         end
     end
 end
@@ -173,18 +156,15 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.5)
     if noclipEnabled then
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
 end)
 
--- ========== ANTI-TELEPORT BYPASS ==========
+-- ========== ANTI-TP ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
-    savedCFrame = hrp.CFrame
     if bypassConnection then bypassConnection:Disconnect() end
     local lastCFrame = hrp.CFrame
     bypassConnection = RunService.Heartbeat:Connect(function()
@@ -192,48 +172,33 @@ local function enableAntiTP()
         local h = getHRP()
         if not h then return end
         local dist = (h.Position - lastCFrame.Position).Magnitude
-        if dist > 50 and flyEnabled then
-            h.CFrame = lastCFrame
-        else
-            lastCFrame = h.CFrame
-        end
+        if dist > 50 and flyEnabled then h.CFrame = lastCFrame
+        else lastCFrame = h.CFrame end
     end)
-    print("[ANTI-TP] Safe bypass enabled")
-end
-
-local function disableAntiTP()
-    if bypassConnection then
-        bypassConnection:Disconnect()
-        bypassConnection = nil
-    end
-    print("[ANTI-TP] Bypass disabled")
 end
 
 local function setBypass(state)
     bypassEnabled = state
     BypassBtn.Text = "ANTI-TP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (B)"
-    if state then enableAntiTP() else disableAntiTP() end
+    if state then enableAntiTP()
+    elseif bypassConnection then bypassConnection:Disconnect() bypassConnection = nil end
 end
 
 -- ========== NIGHT VISION ==========
-local function saveLighting()
-    originalLighting = {
-        Ambient = Lighting.Ambient,
-        OutdoorAmbient = Lighting.OutdoorAmbient,
-        Brightness = Lighting.Brightness,
-        ClockTime = Lighting.ClockTime,
-        FogEnd = Lighting.FogEnd,
-        FogStart = Lighting.FogStart,
-        FogColor = Lighting.FogColor,
-        GlobalShadows = Lighting.GlobalShadows,
-    }
-end
-
 local function setNightVision(state)
     nightVisionEnabled = state
     NightBtn.Text = "NIGHT VISION: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
     if state then
-        if not originalLighting.Ambient then saveLighting() end
+        originalLighting = {
+            Ambient = Lighting.Ambient,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+            Brightness = Lighting.Brightness,
+            ClockTime = Lighting.ClockTime,
+            FogEnd = Lighting.FogEnd,
+            FogStart = Lighting.FogStart,
+            FogColor = Lighting.FogColor,
+            GlobalShadows = Lighting.GlobalShadows,
+        }
         Lighting.Ambient = CONFIG.NIGHT_VISION_COLOR
         Lighting.OutdoorAmbient = CONFIG.NIGHT_VISION_COLOR
         Lighting.Brightness = 3
@@ -242,7 +207,6 @@ local function setNightVision(state)
         Lighting.FogStart = 100000
         Lighting.FogColor = CONFIG.NIGHT_VISION_COLOR
         Lighting.GlobalShadows = false
-        -- Добавляем PointLight к персонажу для подсветки
         local hrp = getHRP()
         if hrp then
             local light = hrp:FindFirstChild("NeonLight") or Instance.new("PointLight")
@@ -253,18 +217,18 @@ local function setNightVision(state)
             light.Parent = hrp
         end
     else
-        Lighting.Ambient = originalLighting.Ambient or Color3.fromRGB(0, 0, 0)
-        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient or Color3.fromRGB(0, 0, 0)
-        Lighting.Brightness = originalLighting.Brightness or 1
-        Lighting.ClockTime = originalLighting.ClockTime or 14
-        Lighting.FogEnd = originalLighting.FogEnd or 1000
-        Lighting.FogStart = originalLighting.FogStart or 0
-        Lighting.FogColor = originalLighting.FogColor or Color3.fromRGB(192, 192, 192)
-        Lighting.GlobalShadows = originalLighting.GlobalShadows ~= false
-        local hrp = getHRP()
-        if hrp and hrp:FindFirstChild("NeonLight") then
-            hrp.NeonLight:Destroy()
+        if originalLighting.Ambient then
+            Lighting.Ambient = originalLighting.Ambient
+            Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+            Lighting.Brightness = originalLighting.Brightness
+            Lighting.ClockTime = originalLighting.ClockTime
+            Lighting.FogEnd = originalLighting.FogEnd
+            Lighting.FogStart = originalLighting.FogStart
+            Lighting.FogColor = originalLighting.FogColor
+            Lighting.GlobalShadows = originalLighting.GlobalShadows
         end
+        local hrp = getHRP()
+        if hrp and hrp:FindFirstChild("NeonLight") then hrp.NeonLight:Destroy() end
     end
 end
 
@@ -276,17 +240,11 @@ local function removeWorldObjects()
             local name = obj.Name:lower()
             local shouldRemove = false
             for _, kw in ipairs(CONFIG.TREE_KEYWORDS) do
-                if name:find(kw) and not name:find("treehouse") then
-                    shouldRemove = true
-                    break
-                end
+                if name:find(kw) and not name:find("treehouse") then shouldRemove = true break end
             end
             if not shouldRemove then
                 for _, kw in ipairs(CONFIG.GRASS_KEYWORDS) do
-                    if name:find(kw) then
-                        shouldRemove = true
-                        break
-                    end
+                    if name:find(kw) then shouldRemove = true break end
                 end
             end
             if shouldRemove then
@@ -296,9 +254,7 @@ local function removeWorldObjects()
             end
         end
         if obj:IsA("ParticleEmitter") then
-            if obj.Name:lower():find("fog") or obj.Name:lower():find("mist") then
-                obj.Enabled = false
-            end
+            if obj.Name:lower():find("fog") or obj.Name:lower():find("mist") then obj.Enabled = false end
         end
     end
     return removed
@@ -306,9 +262,7 @@ end
 
 local function restoreWorldObjects()
     for _, data in ipairs(removedObjects) do
-        if data.obj then
-            data.obj.Parent = data.parent
-        end
+        if data.obj then data.obj.Parent = data.parent end
     end
     removedObjects = {}
 end
@@ -321,25 +275,57 @@ local function setWorldClean(state)
         print("[WORLD] Removed " .. count .. " objects")
     else
         restoreWorldObjects()
-        print("[WORLD] Restored objects")
     end
 end
 
--- ========== CHUNK LOADER ==========
+-- ========== CHUNK LOADER (FIXED) ==========
 local function loadAllChunks()
-    print("[CHUNK] Loading all chunks...")
+    print("[CHUNK] Loading chunks...")
     local hrp = getHRP()
     if not hrp then return end
-    -- Принудительно прогружаем все части карты
+    
+    -- 1. Пробуем RequestStreamAroundAsync
+    pcall(function()
+        if workspace.RequestStreamAroundAsync then
+            workspace:RequestStreamAroundAsync(hrp.Position)
+        end
+    end)
+    
+    -- 2. ТП в Campground для прогрузки
+    local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
+    if cg then
+        local pos = cg:GetPivot().Position
+        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 20, 0))
+        task.wait(1)
+    end
+    
+    -- 3. Пролетаем по карте (телепорт в 4 угла)
+    local map = workspace:FindFirstChild("Map")
+    if map then
+        local corners = {
+            Vector3.new(500, 50, 500),
+            Vector3.new(-500, 50, 500),
+            Vector3.new(500, 50, -500),
+            Vector3.new(-500, 50, -500),
+        }
+        for _, corner in ipairs(corners) do
+            hrp.CFrame = CFrame.new(corner)
+            task.wait(0.5)
+            pcall(function()
+                if workspace.RequestStreamAroundAsync then
+                    workspace:RequestStreamAroundAsync(corner)
+                end
+            end)
+        end
+    end
+    
+    -- 4. Прогружаем все части
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.LocalTransparencyModifier = 0
         end
     end
-    -- Если есть StreamingEnabled — отключаем его
-    pcall(function()
-        workspace.StreamingEnabled = false
-    end)
+    
     print("[CHUNK] Done")
 end
 
@@ -348,9 +334,7 @@ local espObjects = {}
 
 local function clearESP()
     for _, obj in ipairs(espObjects) do
-        if obj and obj.Parent then
-            obj:Destroy()
-        end
+        if obj and obj.Parent then obj:Destroy() end
     end
     espObjects = {}
 end
@@ -395,7 +379,7 @@ local function updateESP()
     if items then
         for _, obj in ipairs(items:GetChildren()) do
             if obj.Name:lower():find("chest") then
-                if obj.Name == "ChestDEF" then
+                if obj.Name:lower():find("def") or obj.Name:lower():find("strong") or obj.Name:lower():find("diamond") then
                     createESP(obj, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD CHEST ★")
                 else
                     createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name)
@@ -413,7 +397,7 @@ local function updateESP()
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
+                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") or n:find("stronghold") then
                     createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name)
                 end
             end
@@ -455,11 +439,27 @@ local function findNearestChest()
     return nearest
 end
 
+-- ========== FIND STRONGHOLD CHEST (FIXED) ==========
 local function findStrongholdChest()
-    local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
-    if not cg then return nil end
-    for _, obj in ipairs(cg:GetDescendants()) do
-        if obj.Name == "ChestDEF" then return obj end
+    -- Ищем по всей карте, исключая кости и NPC
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        local n = obj.Name:lower()
+        -- Исключаем кости (Bone), NPC и части тела
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            if not obj:IsA("Bone") and not obj:IsA("Motor6D") then
+                for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
+                    if n == kw or n:find(kw) then
+                        -- Проверяем, что это не часть персонажа
+                        if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
+                            -- Проверяем, что это не кость
+                            if not obj.Parent or obj.Parent.Name ~= "Characters" then
+                                return obj
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
     return nil
 end
@@ -471,8 +471,10 @@ local function teleportTo(target)
     local pos
     if target:IsA("Model") then
         pos = target.PrimaryPart and target.PrimaryPart.CFrame or target:GetPivot()
-    else
+    elseif target:IsA("BasePart") then
         pos = target.CFrame
+    else
+        return false
     end
     hrp.CFrame = pos + Vector3.new(0, 5, 0)
     return true
@@ -487,6 +489,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.B then setBypass(not bypassEnabled)
     elseif input.KeyCode == Enum.KeyCode.N then setNightVision(not nightVisionEnabled)
     elseif input.KeyCode == Enum.KeyCode.R then setWorldClean(not worldCleanEnabled)
+    elseif input.KeyCode == Enum.KeyCode.C then loadAllChunks()
     elseif input.KeyCode == Enum.KeyCode.T then
         local chest = findNearestChest()
         if chest then teleportTo(chest) end
@@ -509,13 +512,14 @@ TpChestBtn.MouseButton1Click:Connect(function()
 end)
 TpStrongBtn.MouseButton1Click:Connect(function()
     local strong = findStrongholdChest()
-    if strong then teleportTo(strong) end
+    if strong then teleportTo(strong)
+    else print("[STRONGHOLD] ChestDEF not found! Maybe Stronghold not open.") end
 end)
 ChunkBtn.MouseButton1Click:Connect(function()
     loadAllChunks()
     ChunkBtn.Text = "ЧАНКИ ЗАГРУЖЕНЫ"
     task.wait(2)
-    ChunkBtn.Text = "ЗАГРУЗИТЬ ЧАНКИ"
+    ChunkBtn.Text = "ЗАГРУЗИТЬ ЧАНКИ (C)"
 end)
 
 -- ========== AUTO-UPDATE ESP ==========
@@ -534,4 +538,4 @@ TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingD
     Position = UDim2.new(0.5, -140, 0.15, 0)
 }):Play()
 
-print("[NEON] v3.0 WORLD CONTROL loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, T=chest, Y=stronghold")
+print("[NEON] v3.1 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, T=chest, Y=stronghold")
