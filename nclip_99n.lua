@@ -1,11 +1,12 @@
 --[[
-    GHOSTWARE v3.3 — FULL SAFE VERSION
+    GHOSTWARE v3.4 — DIAMOND CHEST + NIGHT VISION
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H) — Highlight + fallback to Box
+    - ESP (H) — Diamond Chest: bright cyan
     - Anti-TP (B)
+    - Night Vision (N)  <-- НОВОЕ
     - Grid Scan (X)
     - Stop Scan (Z)
     - TP to Found (Y)
@@ -19,6 +20,7 @@ local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 local Camera = workspace.CurrentCamera
 
 local uiName = "GhostWare_v3"
@@ -29,7 +31,9 @@ local SCAN = {
     STEP = 200,
     RANGE = 2000,
     WAIT = 0.5,
-    KEYWORDS = {"chestdef", "diamondchest", "stronghold", "cultist", "ritual", "altar"}
+    -- ВАЖНО: Diamond Chest с пробелом!
+    DIAMOND_CHEST_NAME = "Diamond Chest",
+    KEYWORDS = {"diamond chest", "chestdef", "stronghold", "cultist", "ritual", "altar"}
 }
 
 -- ========== STATE ==========
@@ -37,6 +41,7 @@ local flyEnabled = false
 local noclipEnabled = false
 local espEnabled = false
 local bypassEnabled = false
+local nightVisionEnabled = false
 local scanEnabled = false
 local foundObject = nil
 local bypassConnection = nil
@@ -45,6 +50,7 @@ local savedCF = nil
 local highlightObjects = {}
 local espMode = "highlight"
 local fullLog = ""
+local originalLighting = {}
 
 -- ========== CLEANUP (безопасный) ==========
 pcall(function()
@@ -71,8 +77,8 @@ end
 
 -- ========== UI ==========
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 400)
-Main.Position = UDim2.new(0.5, -200, 0.15, 0)
+Main.Size = UDim2.new(0, 400, 0, 440)
+Main.Position = UDim2.new(0.5, -200, 0.12, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -93,7 +99,7 @@ Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 10)
-Title.Text = "GhostWare v3.3\nFull Safe"
+Title.Text = "GhostWare v3.4\nDiamond Edition"
 Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
@@ -121,7 +127,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "> v3.3 загружен.\n"
+LogText.Text = "> v3.4 загружен.\n"
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -170,11 +176,12 @@ end
 local FlyBtn, FlyInd = CreateToggle("1. FLY & NOCLIP")
 local EspBtn, EspInd = CreateToggle("2. ESP (H)")
 local AntiTpBtn, AntiTpInd = CreateToggle("3. ANTI-TP (B)")
-local ScanBtn, ScanInd = CreateToggle("4. GRID SCAN (X)")
-local TpBtn, TpInd = CreateToggle("5. TP К НАЙДЕННОМУ (Y)")
-local StopBtn, StopInd = CreateToggle("6. СТОП СКАН (Z)")
-local DebugBtn, DebugInd = CreateToggle("7. ПОКАЗАТЬ ВСЁ (J)")
-local LogBtn, LogInd = CreateToggle("8. КОПИРОВАТЬ ЛОГ (C)")
+local NightBtn, NightInd = CreateToggle("4. NIGHT VISION (N)")
+local ScanBtn, ScanInd = CreateToggle("5. GRID SCAN (X)")
+local TpBtn, TpInd = CreateToggle("6. TP К НАЙДЕННОМУ (Y)")
+local StopBtn, StopInd = CreateToggle("7. СТОП СКАН (Z)")
+local DebugBtn, DebugInd = CreateToggle("8. ПОКАЗАТЬ ВСЁ (J)")
+local LogBtn, LogInd = CreateToggle("9. КОПИРОВАТЬ ЛОГ (C)")
 
 local function getHRP()
     local char = LocalPlayer.Character
@@ -242,7 +249,7 @@ RunService.RenderStepped:Connect(function()
     else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ========== 2. ESP (С ЗАЩИТОЙ) ==========
+-- ========== 2. ESP (DIAMOND CHEST ЯРКО-ГОЛУБОЙ) ==========
 local function clearESP()
     for _, hl in ipairs(highlightObjects) do
         if hl and hl.Parent then hl:Destroy() end
@@ -260,14 +267,13 @@ local function createESP(target, color, label, big)
     if not adornee then return end
     
     if espMode == "highlight" then
-        -- Пробуем Highlight
         local success = pcall(function()
             local hl = Instance.new("Highlight")
             hl.Name = "GhostWareESP"
             hl.Adornee = target
             hl.FillColor = color
             hl.OutlineColor = color
-            hl.FillTransparency = 0.5
+            hl.FillTransparency = 0.4
             hl.OutlineTransparency = 0
             pcall(function()
                 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -276,11 +282,10 @@ local function createESP(target, color, label, big)
             table.insert(highlightObjects, hl)
         end)
         
-        -- Если Highlight не работает — используем Box
         if not success then
             local box = Instance.new("BoxHandleAdornment")
             box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
-            box.Transparency = 0.6
+            box.Transparency = 0.4
             box.Color3 = color
             box.AlwaysOnTop = true
             box.ZIndex = 10
@@ -291,7 +296,7 @@ local function createESP(target, color, label, big)
     else
         local box = Instance.new("BoxHandleAdornment")
         box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
-        box.Transparency = 0.6
+        box.Transparency = 0.4
         box.Color3 = color
         box.AlwaysOnTop = true
         box.ZIndex = 10
@@ -300,11 +305,10 @@ local function createESP(target, color, label, big)
         table.insert(highlightObjects, box)
     end
     
-    -- Текст (безопасно)
     if label then
         pcall(function()
             local billboard = Instance.new("BillboardGui")
-            billboard.Size = UDim2.new(0, 200, 0, 50)
+            billboard.Size = UDim2.new(0, 250, 0, 50)
             billboard.AlwaysOnTop = true
             billboard.MaxDistance = math.huge
             billboard.StudsOffset = Vector3.new(0, 10, 0)
@@ -317,7 +321,7 @@ local function createESP(target, color, label, big)
             text.Text = label
             text.TextColor3 = color
             text.Font = Enum.Font.GothamBlack
-            text.TextSize = big and 16 or 12
+            text.TextSize = big and 18 or 12
             text.TextStrokeTransparency = 0
             text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
             text.Parent = billboard
@@ -335,14 +339,23 @@ local function updateESP()
         if obj:IsA("Model") or obj:IsA("BasePart") then
             local n = obj.Name:lower()
             
-            if n == "stronghold" or n:find("cultist") or n:find("ritual") or n:find("altar") then
-                createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
-                count = count + 1
-            elseif n == "chestdef" or n == "diamondchest" then
+            -- DIAMOND CHEST (ярко-голубой)
+            if n == "diamond chest" or n == "diamondchest" or n == "diamond_chest" then
                 if not obj:IsA("Bone") then
                     createESP(obj, Color3.fromRGB(0, 255, 255), "💎 DIAMOND CHEST 💎", true)
                     count = count + 1
                 end
+            -- Stronghold / cultist
+            elseif n == "stronghold" or n:find("cultist") or n:find("ritual") or n:find("altar") then
+                createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
+                count = count + 1
+            -- ChestDEF (старый вариант)
+            elseif n == "chestdef" then
+                if not obj:IsA("Bone") then
+                    createESP(obj, Color3.fromRGB(0, 255, 255), "💎 CHESTDEF 💎", true)
+                    count = count + 1
+                end
+            -- Обычные сундуки
             elseif n:find("chest") and not n:find("def") then
                 if not obj:IsA("Bone") then
                     createESP(obj, Color3.fromRGB(255, 200, 0), "Chest", false)
@@ -423,7 +436,73 @@ AntiTpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ========== 4. GRID SCAN ==========
+-- ========== 4. NIGHT VISION ==========
+local function setNightVision(state)
+    nightVisionEnabled = state
+    NightBtn.Text = "    NIGHT VISION: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
+    
+    if state then
+        TweenService:Create(NightInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        
+        originalLighting = {
+            Ambient = Lighting.Ambient,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+            Brightness = Lighting.Brightness,
+            ClockTime = Lighting.ClockTime,
+            FogEnd = Lighting.FogEnd,
+            FogStart = Lighting.FogStart,
+            FogColor = Lighting.FogColor,
+            GlobalShadows = Lighting.GlobalShadows,
+        }
+        
+        Lighting.Ambient = Color3.fromRGB(100, 255, 200)
+        Lighting.OutdoorAmbient = Color3.fromRGB(100, 255, 200)
+        Lighting.Brightness = 3
+        Lighting.ClockTime = 12
+        Lighting.FogEnd = 100000
+        Lighting.FogStart = 100000
+        Lighting.FogColor = Color3.fromRGB(200, 200, 200)
+        Lighting.GlobalShadows = false
+        
+        local hrp = getHRP()
+        if hrp then
+            local light = hrp:FindFirstChild("GhostLight") or Instance.new("PointLight")
+            light.Name = "GhostLight"
+            light.Brightness = 5
+            light.Range = 100
+            light.Color = Color3.fromRGB(0, 255, 200)
+            light.Parent = hrp
+        end
+        
+        AddLog("Night Vision ВКЛ")
+    else
+        TweenService:Create(NightInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        
+        if originalLighting.Ambient then
+            Lighting.Ambient = originalLighting.Ambient
+            Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+            Lighting.Brightness = originalLighting.Brightness
+            Lighting.ClockTime = originalLighting.ClockTime
+            Lighting.FogEnd = originalLighting.FogEnd
+            Lighting.FogStart = originalLighting.FogStart
+            Lighting.FogColor = originalLighting.FogColor
+            Lighting.GlobalShadows = originalLighting.GlobalShadows
+        end
+        
+        local hrp = getHRP()
+        if hrp and hrp:FindFirstChild("GhostLight") then
+            hrp.GhostLight:Destroy()
+        end
+        
+        AddLog("Night Vision ВЫКЛ")
+    end
+end
+
+NightBtn.MouseButton1Click:Connect(function()
+    setNightVision(not nightVisionEnabled)
+end)
+
+-- ========== 5. GRID SCAN ==========
 local function findTarget()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") or obj:IsA("BasePart") then
@@ -508,7 +587,7 @@ ScanBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- ========== 5. TP К НАЙДЕННОМУ ==========
+-- ========== 6. TP К НАЙДЕННОМУ ==========
 TpBtn.MouseButton1Click:Connect(function()
     if not foundObject then
         AddLog("Сначала найди объект (X)", true)
@@ -535,23 +614,22 @@ TpBtn.MouseButton1Click:Connect(function()
     TweenService:Create(TpInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
--- ========== 6. СТОП СКАН ==========
+-- ========== 7. СТОП СКАН ==========
 StopBtn.MouseButton1Click:Connect(function()
     scanEnabled = false
     AddLog("Скан остановлен.")
 end)
 
--- ========== 7. DEBUG ==========
+-- ========== 8. DEBUG ==========
 DebugBtn.MouseButton1Click:Connect(function()
     AddLog("=== ПОЛНЫЙ СКАН WORKSPACE ===")
     local count = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
         local n = obj.Name:lower()
-        for _, kw in ipairs(SCAN.KEYWORDS) do
-            if n:find(kw) and not obj:IsA("Bone") then
+        if n:find("diamond") or n:find("chest") or n:find("stronghold") or n:find("cultist") then
+            if not obj:IsA("Bone") then
                 count = count + 1
                 AddLog(obj:GetFullName() .. " | " .. obj.ClassName)
-                break
             end
         end
     end
@@ -561,7 +639,7 @@ DebugBtn.MouseButton1Click:Connect(function()
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
--- ========== 8. КОПИРОВАТЬ ЛОГ ==========
+-- ========== 9. КОПИРОВАТЬ ЛОГ ==========
 LogBtn.MouseButton1Click:Connect(function()
     local success = false
     pcall(function()
@@ -575,7 +653,7 @@ LogBtn.MouseButton1Click:Connect(function()
     end)
     
     if success then
-        AddLog("Лог скопирован в буфер!")
+        AddLog("Лог скопирован!")
     else
         AddLog("setclipboard не поддерживается", true)
     end
@@ -585,5 +663,6 @@ LogBtn.MouseButton1Click:Connect(function()
     TweenService:Create(LogInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
-AddLog("GhostWare v3.3 загружен!")
-AddLog("ЛКМ на ESP, ПКМ — смена режима")
+AddLog("GhostWare v3.4 загружен!")
+AddLog("Diamond Chest: ярко-голубой")
+AddLog("Night Vision: клавиша N")
