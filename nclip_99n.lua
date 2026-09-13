@@ -1,16 +1,16 @@
 --[[
-    NEON v3.4 — STABLE + STRONGHOLD FIX
+    NEON v3.5 — CHESTDEF HUNTER
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H) — Stronghold: big purple text
+    - ESP (H) — ChestDEF: big purple text
     - Anti-TP Simple (B)
     - Night Vision (N)
     - Clean World (R)
-    - Load Chunks (C)
+    - Load Chunks (C) — aggressive
     - TP to Chest (T)
-    - TP to Stronghold Building (Y)
+    - TP to ChestDEF (Y)
     - Scan Remotes (U)
 --]]
 
@@ -32,7 +32,7 @@ if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiNam
 local CONFIG = {
     FLY_SPEED = 80,
     ESP_CHEST_COLOR = Color3.fromRGB(255, 200, 0),
-    ESP_STRONGHOLD_COLOR = Color3.fromRGB(200, 0, 255), -- пурпурный
+    ESP_CHESTDEF_COLOR = Color3.fromRGB(200, 0, 255), -- пурпурный для ChestDEF
     ESP_BUILDING_COLOR = Color3.fromRGB(100, 150, 255),
     ESP_ITEM_COLOR = Color3.fromRGB(0, 255, 100),
     ESP_NPC_COLOR = Color3.fromRGB(255, 70, 70),
@@ -40,7 +40,8 @@ local CONFIG = {
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
     TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
     GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
-    STRONGHOLD_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding"},
+    CHESTDEF_NAME = "ChestDEF",
+    CHUNK_RADIUS = 800,
 }
 
 -- ========== STATE ==========
@@ -65,7 +66,7 @@ pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 280, 0, 420)
+Main.Size = UDim2.new(0, 280, 0, 450)
 Main.Position = UDim2.new(0.5, -140, 0.1, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 Main.BorderSizePixel = 0
@@ -82,8 +83,8 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON v3.4 STABLE ★"
-Title.TextColor3 = Color3.fromRGB(0, 255, 200)
+Title.Text = "★ NEON v3.5 CHESTDEF ★"
+Title.TextColor3 = Color3.fromRGB(200, 0, 255)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 12
 Title.BorderSizePixel = 0
@@ -116,10 +117,11 @@ local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 144, Color3.fromRGB(255,
 local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(200, 150, 255))
 local WorldBtn = CreateButton("CLEAN WORLD: ВЫКЛ (R)", 210, Color3.fromRGB(255, 150, 50))
 local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", 243, Color3.fromRGB(0, 255, 100))
-local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(200, 0, 255))
+local TpChestDefBtn = CreateButton("TP К CHESTDEF (Y)", 276, Color3.fromRGB(200, 0, 255))
 local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ (C)", 309, Color3.fromRGB(0, 200, 255))
 local RemoteBtn = CreateButton("СКАН REMOTES (U)", 342, Color3.fromRGB(255, 200, 100))
 local ResetTpBtn = CreateButton("СБРОСИТЬ ANTI-TP", 375, Color3.fromRGB(255, 100, 100))
+local FindChestDefBtn = CreateButton("НАЙТИ CHESTDEF (J)", 408, Color3.fromRGB(255, 0, 200))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -173,31 +175,21 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- ========== ANTI-TP (SIMPLE — БЕЗ METATABLE) ==========
+-- ========== ANTI-TP SIMPLE ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
     if bypassConnection then bypassConnection:Disconnect() end
-    
     savedPosition = hrp.Position
     savedCFrame = hrp.CFrame
-    
     bypassConnection = RunService.Heartbeat:Connect(function()
         if not bypassEnabled then return end
         local h = getHRP()
         if not h then return end
-        
-        -- Если телепортировало резко — возвращаем
         local dist = (h.Position - savedPosition).Magnitude
-        if dist > 100 then
-            h.CFrame = savedCFrame
-        else
-            savedCFrame = h.CFrame
-            savedPosition = h.Position
-        end
+        if dist > 100 then h.CFrame = savedCFrame
+        else savedCFrame = h.CFrame savedPosition = h.Position end
     end)
-    
-    print("[ANTI-TP] Simple bypass enabled")
 end
 
 local function setBypass(state)
@@ -301,32 +293,56 @@ local function setWorldClean(state)
     end
 end
 
--- ========== CHUNK LOADER ==========
+-- ========== CHUNK LOADER (AGGRESSIVE) ==========
 local function loadAllChunks()
-    print("[CHUNK] Loading chunks...")
+    print("[CHUNK] Aggressive loading...")
     local hrp = getHRP()
     if not hrp then return end
     
+    -- 1. RequestStreamAroundAsync на текущей позиции
     pcall(function()
         if workspace.RequestStreamAroundAsync then
             workspace:RequestStreamAroundAsync(hrp.Position)
         end
     end)
     
+    -- 2. ТП в Campground
     local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
     if cg then
         local pos = cg:GetPivot().Position
-        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 20, 0))
+        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 30, 0))
         task.wait(1)
+        pcall(function()
+            if workspace.RequestStreamAroundAsync then
+                workspace:RequestStreamAroundAsync(pos)
+            end
+        end)
     end
     
+    -- 3. ТП по спирали от центра карты
+    local center = Vector3.new(0, 50, 0)
+    local radius = CONFIG.CHUNK_RADIUS
+    for angle = 0, 360, 45 do
+        local rad = math.rad(angle)
+        local pos = center + Vector3.new(math.cos(rad) * radius, 0, math.sin(rad) * radius)
+        hrp.CFrame = CFrame.new(pos)
+        task.wait(0.5)
+        pcall(function()
+            if workspace.RequestStreamAroundAsync then
+                workspace:RequestStreamAroundAsync(pos)
+            end
+        end)
+    end
+    
+    -- 4. ТП по всей карте (сетка)
     local map = workspace:FindFirstChild("Map")
     if map then
         local corners = {
-            Vector3.new(500, 50, 500),
-            Vector3.new(-500, 50, 500),
-            Vector3.new(500, 50, -500),
-            Vector3.new(-500, 50, -500),
+            Vector3.new(1000, 50, 1000),
+            Vector3.new(-1000, 50, 1000),
+            Vector3.new(1000, 50, -1000),
+            Vector3.new(-1000, 50, -1000),
+            Vector3.new(0, 50, 0),
         }
         for _, corner in ipairs(corners) do
             hrp.CFrame = CFrame.new(corner)
@@ -339,6 +355,7 @@ local function loadAllChunks()
         end
     end
     
+    -- 5. Прогружаем все части
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.LocalTransparencyModifier = 0
@@ -346,6 +363,24 @@ local function loadAllChunks()
     end
     
     print("[CHUNK] Done")
+end
+
+-- ========== FIND CHESTDEF (ALMAZ CHEST) ==========
+local function findChestDef()
+    -- Ищем ChestDEF по всей карте
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == CONFIG.CHESTDEF_NAME then
+            -- Исключаем кости (Bone) и NPC
+            if not obj:IsA("Bone") and not obj:IsA("Motor6D") then
+                if not obj:IsDescendantOf(LocalPlayer.Character or game) then
+                    if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
 end
 
 -- ========== SCAN REMOTES ==========
@@ -387,7 +422,7 @@ local function createESP(target, color, label, big)
     if label then
         local billboard = Instance.new("BillboardGui")
         if big then
-            billboard.Size = UDim2.new(0, 300, 0, 40)
+            billboard.Size = UDim2.new(0, 300, 0, 50)
         else
             billboard.Size = UDim2.new(0, 120, 0, 20)
         end
@@ -413,6 +448,21 @@ local function updateESP()
     clearESP()
     if not espEnabled then return end
 
+    -- ChestDEF — большой пурпурный
+    local chestDef = findChestDef()
+    if chestDef then
+        createESP(chestDef, CONFIG.ESP_CHESTDEF_COLOR, "★ ALMAZ CHEST ★", true)
+        -- Подсвечиваем родительское здание
+        local parent = chestDef.Parent
+        while parent and parent ~= workspace do
+            if parent:IsA("Model") then
+                createESP(parent, CONFIG.ESP_CHESTDEF_COLOR, "★ STRONGHOLD ZONE ★", true)
+                break
+            end
+            parent = parent.Parent
+        end
+    end
+
     -- Items
     local items = workspace:FindFirstChild("Items")
     if items then
@@ -433,17 +483,7 @@ local function updateESP()
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                -- Стронгхолд — большой пурпурный
-                local isStronghold = false
-                for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
-                    if n:find(kw) then
-                        isStronghold = true
-                        break
-                    end
-                end
-                if isStronghold then
-                    createESP(landmark, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD ★", true)
-                elseif n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
+                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
                     createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name, false)
                 end
             end
@@ -465,84 +505,6 @@ local function setESP(state)
     espEnabled = state
     EspBtn.Text = "ESP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (H)"
     if state then updateESP() else clearESP() end
-end
-
--- ========== FIND STRONGHOLD BUILDING (FIXED) ==========
-local function findStrongholdBuilding()
-    local found = {}
-    
-    -- 1. Ищем по всей карте
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local n = obj.Name:lower()
-            for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
-                if n:find(kw) then
-                    -- Исключаем кости, NPC, персонажей
-                    if not obj:IsDescendantOf(LocalPlayer.Character or game) 
-                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
-                        table.insert(found, obj)
-                        break
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 2. Если не нашли — ищем по ключевым словам в имени (Stronghold, Fortress, Castle)
-    if #found == 0 then
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") then
-                local n = obj.Name:lower()
-                if n:find("stronghold") or n:find("fortress") or n:find("castle") then
-                    if not obj:IsDescendantOf(LocalPlayer.Character or game) 
-                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
-                        table.insert(found, obj)
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 3. Если всё ещё не нашли — ищем по сундуку ChestDEF внутри Campground
-    if #found == 0 then
-        local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
-        if cg then
-            for _, obj in ipairs(cg:GetDescendants()) do
-                if obj.Name == "ChestDEF" then
-                    -- Возвращаем родителя сундука (здание)
-                    local parent = obj.Parent
-                    while parent and parent ~= cg do
-                        if parent:IsA("Model") then
-                            table.insert(found, parent)
-                            break
-                        end
-                        parent = parent.Parent
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Возвращаем ближайший
-    if #found > 0 then
-        local hrp = getHRP()
-        if not hrp then return found[1] end
-        local nearest, dist = nil, math.huge
-        for _, obj in ipairs(found) do
-            local pos
-            if obj:IsA("Model") then
-                pos = obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position
-            elseif obj:IsA("BasePart") then
-                pos = obj.Position
-            end
-            if pos then
-                local d = (pos - hrp.Position).Magnitude
-                if d < dist then dist = d nearest = obj end
-            end
-        end
-        return nearest
-    end
-    return nil
 end
 
 -- ========== TELEPORT ==========
@@ -600,16 +562,23 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.R then setWorldClean(not worldCleanEnabled)
     elseif input.KeyCode == Enum.KeyCode.C then loadAllChunks()
     elseif input.KeyCode == Enum.KeyCode.U then scanRemotes()
+    elseif input.KeyCode == Enum.KeyCode.J then
+        local chestDef = findChestDef()
+        if chestDef then
+            print("[CHESTDEF] Found: " .. chestDef:GetFullName())
+        else
+            print("[CHESTDEF] Not found! Maybe Stronghold not open.")
+        end
     elseif input.KeyCode == Enum.KeyCode.T then
         local chest = findNearestChest()
         if chest then teleportTo(chest) end
     elseif input.KeyCode == Enum.KeyCode.Y then
-        local strong = findStrongholdBuilding()
-        if strong then
-            teleportTo(strong)
-            print("[STRONGHOLD] TP to: " .. strong:GetFullName())
+        local chestDef = findChestDef()
+        if chestDef then
+            teleportTo(chestDef)
+            print("[CHESTDEF] TP to: " .. chestDef:GetFullName())
         else
-            print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+            print("[CHESTDEF] Not found! Try Load Chunks (C) first.")
         end
     end
 end)
@@ -625,13 +594,13 @@ TpChestBtn.MouseButton1Click:Connect(function()
     local chest = findNearestChest()
     if chest then teleportTo(chest) end
 end)
-TpStrongBtn.MouseButton1Click:Connect(function()
-    local strong = findStrongholdBuilding()
-    if strong then
-        teleportTo(strong)
-        print("[STRONGHOLD] TP to: " .. strong:GetFullName())
+TpChestDefBtn.MouseButton1Click:Connect(function()
+    local chestDef = findChestDef()
+    if chestDef then
+        teleportTo(chestDef)
+        print("[CHESTDEF] TP to: " .. chestDef:GetFullName())
     else
-        print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+        print("[CHESTDEF] Not found! Try Load Chunks (C) first.")
     end
 end)
 ChunkBtn.MouseButton1Click:Connect(function()
@@ -652,6 +621,18 @@ ResetTpBtn.MouseButton1Click:Connect(function()
     task.wait(2)
     ResetTpBtn.Text = "СБРОСИТЬ ANTI-TP"
 end)
+FindChestDefBtn.MouseButton1Click:Connect(function()
+    local chestDef = findChestDef()
+    if chestDef then
+        FindChestDefBtn.Text = "CHESTDEF НАЙДЕН!"
+        print("[CHESTDEF] Found: " .. chestDef:GetFullName())
+    else
+        FindChestDefBtn.Text = "НЕ НАЙДЕН"
+        print("[CHESTDEF] Not found! Maybe Stronghold not open.")
+    end
+    task.wait(2)
+    FindChestDefBtn.Text = "НАЙТИ CHESTDEF (J)"
+end)
 
 -- ========== AUTO-UPDATE ESP ==========
 task.spawn(function()
@@ -669,4 +650,4 @@ TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingD
     Position = UDim2.new(0.5, -140, 0.1, 0)
 }):Play()
 
-print("[NEON] v3.4 STABLE loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, U=remotes, T=chest, Y=stronghold")
+print("[NEON] v3.5 CHESTDEF loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, U=remotes, T=chest, Y=chestdef, J=find chestdef")
