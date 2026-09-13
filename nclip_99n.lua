@@ -19,6 +19,7 @@ local savedPos = nil
 local savedCF = nil
 local bypassConnection = nil
 local espObjects = {}
+local foundCamp = nil -- СОХРАНЯЕМ НАЙДЕННЫЙ СТРОНГХОЛД
 
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
@@ -136,6 +137,7 @@ local AntiTpBtn, AntiTpInd = CreateVoidToggle("AntiTP", "1. ANTI-TP (Dipsik)")
 local FlyBtn, FlyInd = CreateVoidToggle("Fly", "2. FLY & NOCLIP (Mobile)")
 local EspBtn, EspInd = CreateVoidToggle("ESP", "3. ESP (All Items)")
 local ScanBtn, ScanInd = CreateVoidToggle("Scan", "4. AUTO-SCAN СТРОНГХОЛД")
+local TpCampBtn, TpCampInd = CreateVoidToggle("TpCamp", "5. ТП К СТРОНГХОЛДУ")
 
 local function getHRP()
     local char = LocalPlayer.Character
@@ -143,7 +145,7 @@ local function getHRP()
     return nil
 end
 
--- ========== 1. ANTI-TP (С ИСПРАВЛЕНИЕМ ГОНКИ ПОТОКОВ) ==========
+-- ========== 1. ANTI-TP ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
@@ -154,7 +156,7 @@ local function enableAntiTP()
     
     bypassConnection = RunService.Heartbeat:Connect(function()
         if not bypassEnabled then return end
-        if scanEnabled then return end -- Пока ищем, не блочим
+        if scanEnabled then return end
         
         local h = getHRP()
         if not h then return end
@@ -225,13 +227,11 @@ RunService.RenderStepped:Connect(function()
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local move = Vector3.new(0, 0, 0)
     
-    -- ПК Управление
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
     
-    -- МОБИЛЬНЫЙ ДЖОЙСТИК
     if hum and move.Magnitude == 0 then
         local moveDir = hum.MoveDirection
         if moveDir.Magnitude > 0 then
@@ -249,7 +249,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ========== 3. ESP (УЛУЧШЕНО БИНОМ) ==========
+-- ========== 3. ESP (ИСПРАВЛЕННЫЙ) ==========
 local function clearESP()
     for _, obj in ipairs(espObjects) do
         if obj and obj.Parent then obj:Destroy() end
@@ -260,27 +260,33 @@ end
 local function createESP(target, color, label, big)
     if not target then return end
     
-    -- Рамка на объект
+    -- Определяем, к чему прикрепить (PrimaryPart для модели)
+    local adornee = target
+    if target:IsA("Model") then
+        adornee = target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart")
+    end
+    if not adornee then return end
+    
+    -- Рамка
     local box = Instance.new("BoxHandleAdornment")
     box.Size = target:IsA("Model") and target:GetExtentsSize() or target.Size
     box.Transparency = 0.6
     box.Color3 = color
     box.AlwaysOnTop = true
     box.ZIndex = 10
-    box.Adornee = target:IsA("Model") and target.PrimaryPart or target
-    if not box.Adornee then box.Adornee = target end
-    box.Parent = box.Adornee
+    box.Adornee = adornee
+    box.Parent = adornee
     table.insert(espObjects, box)
-
-    -- Текст, который видно издалека
+    
+    -- Текст
     if label then
         local billboard = Instance.new("BillboardGui")
         billboard.Size = UDim2.new(0, 200, 0, 50)
         billboard.AlwaysOnTop = true
-        billboard.MaxDistance = math.huge -- Видно с любого расстояния!
+        billboard.MaxDistance = math.huge
         billboard.StudsOffset = Vector3.new(0, target:IsA("Model") and 10 or 3, 0)
-        billboard.Adornee = box.Adornee
-        billboard.Parent = box.Adornee
+        billboard.Adornee = adornee
+        billboard.Parent = adornee
         
         local text = Instance.new("TextLabel")
         text.Size = UDim2.new(1, 0, 1, 0)
@@ -300,15 +306,20 @@ local function updateESP()
     clearESP()
     if not espEnabled then return end
 
+    -- Сохранённый Стронгхолд (если найден)
+    if foundCamp then
+        createESP(foundCamp, Color3.fromRGB(200, 0, 255), "★ СТРОНГХОЛД ★", true)
+    end
+
     for _, obj in ipairs(workspace:GetDescendants()) do
-        -- Ищем Стронгхолд
-        if obj.Name == "Stronghold" then
-            createESP(obj, Color3.fromRGB(200, 0, 255), "★ СТРОНГХОЛД ЗДЕСЬ ★", true)
-        -- Ищем Алмазный сундук
+        -- Стронгхолд
+        if obj.Name == "Stronghold" and not obj:IsDescendantOf(LocalPlayer.Character or game) then
+            createESP(obj, Color3.fromRGB(200, 0, 255), "★ СТРОНГХОЛД ★", true)
+        -- Алмазный сундук
         elseif (obj.Name == "ChestDEF" or obj.Name == "DiamondChest") and not obj:IsA("Bone") and not obj:IsDescendantOf(LocalPlayer.Character or game) then
             createESP(obj, Color3.fromRGB(0, 255, 255), "💎 АЛМАЗНЫЙ СУНДУК 💎", true)
-        -- Ищем обычные сундуки
-        elseif string.find(obj.Name:lower(), "chest") and not string.find(obj.Name:lower(), "def") then
+        -- Обычные сундуки
+        elseif string.find(obj.Name:lower(), "chest") and not string.find(obj.Name:lower(), "def") and not obj:IsA("Bone") then
             createESP(obj, Color3.fromRGB(255, 200, 0), "Сундук", false)
         end
     end
@@ -328,7 +339,7 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(2) -- Раз в 2 секунды, чтобы не лагал телефон
+        task.wait(2)
         if espEnabled then updateESP() end
     end
 end)
@@ -337,7 +348,7 @@ EspBtn.MouseButton1Click:Connect(function()
     espEnabled = not espEnabled
     if espEnabled then
         TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
-        AddLog("ESP включен (Видно издалека).")
+        AddLog("ESP включен.")
         updateESP()
     else
         TweenService:Create(EspInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
@@ -346,7 +357,7 @@ EspBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ========== 4. АВТО-ПОИСК ПОД КАРТОЙ (ФИКС ОТКИДЫВАНИЯ) ==========
+-- ========== 4. АВТО-ПОИСК (С СОХРАНЕНИЕМ И ФИКСОМ) ==========
 ScanBtn.MouseButton1Click:Connect(function()
     if scanEnabled then
         scanEnabled = false
@@ -382,8 +393,7 @@ ScanBtn.MouseButton1Click:Connect(function()
             
             local found = nil
             for _, obj in ipairs(workspace:GetDescendants()) do
-                -- ТОЧНО ищем тот самый сундук!
-                if (obj.Name == "ChestDEF" or obj.Name == "DiamondChest") and not obj:IsDescendantOf(LocalPlayer.Character or game) then
+                if (obj.Name == "ChestDEF" or obj.Name == "DiamondChest") and not obj:IsA("Bone") and not obj:IsDescendantOf(LocalPlayer.Character or game) then
                     found = obj
                     break
                 end
@@ -392,20 +402,20 @@ ScanBtn.MouseButton1Click:Connect(function()
             if found then
                 local targetPos = found:IsA("Model") and found:GetPivot().Position or found.Position
                 
-                -- Паркуемся ровно ПОД сундуком
                 bp.Position = Vector3.new(targetPos.X, targetPos.Y - 20, targetPos.Z)
                 hrp.CFrame = CFrame.new(bp.Position)
                 
+                foundCamp = found
                 AddLog("★ АЛМАЗНЫЙ СУНДУК НАЙДЕН!")
                 
-                -- КРИТИЧЕСКИЙ ФИКС: ОБНОВЛЯЕМ АНТИ-ТП ДО ВЫКЛЮЧЕНИЯ СКАНА
+                -- ФИКС: обновляем Anti-TP до выключения скана
                 if bypassEnabled then
                     savedPos = hrp.Position
                     savedCF = hrp.CFrame
                 end
                 
-                task.wait(0.1) -- Даем кадру прогрузиться
-                scanEnabled = false -- ВЫКЛЮЧАЕМ СКАН. АНТИ-ТП ПРИНИМАЕТ НОВУЮ ПОЗИЦИЮ.
+                task.wait(0.1)
+                scanEnabled = false
                 
                 AddLog("Завис внизу! Врубай Fly и лутай!")
                 break
@@ -422,4 +432,34 @@ ScanBtn.MouseButton1Click:Connect(function()
         if bp then bp:Destroy() end
         TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
     end)
+end)
+
+-- ========== 5. ТП К НАЙДЕННОМУ СТРОНГХОЛДУ ==========
+TpCampBtn.MouseButton1Click:Connect(function()
+    if not foundCamp then
+        AddLog("Стронгхолд не найден! Сначала нажми AUTO-SCAN.", true)
+        return
+    end
+    
+    local hrp = getHRP()
+    if not hrp then return end
+    
+    local pos
+    if foundCamp:IsA("Model") then
+        pos = foundCamp.PrimaryPart and foundCamp.PrimaryPart.Position or foundCamp:GetPivot().Position
+    elseif foundCamp:IsA("BasePart") then
+        pos = foundCamp.Position
+    end
+    
+    if pos then
+        -- ФИКС: обновляем Anti-TP
+        savedCF = CFrame.new(pos + Vector3.new(0, 5, 0))
+        savedPos = savedCF.Position
+        hrp.CFrame = savedCF
+        
+        TweenService:Create(TpCampInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        AddLog("ТП к Стронгхолду выполнен!")
+        task.wait(1)
+        TweenService:Create(TpCampInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+    end
 end)
