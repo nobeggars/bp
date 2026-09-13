@@ -1,11 +1,11 @@
 --[[
-    NEON v3.3 — FULL EDITION
+    NEON v3.4 — STABLE + STRONGHOLD FIX
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H)
-    - Anti-TP Enhanced (B)
+    - ESP (H) — Stronghold: big purple text
+    - Anti-TP Simple (B)
     - Night Vision (N)
     - Clean World (R)
     - Load Chunks (C)
@@ -32,7 +32,7 @@ if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiNam
 local CONFIG = {
     FLY_SPEED = 80,
     ESP_CHEST_COLOR = Color3.fromRGB(255, 200, 0),
-    ESP_STRONGHOLD_COLOR = Color3.fromRGB(255, 0, 150),
+    ESP_STRONGHOLD_COLOR = Color3.fromRGB(200, 0, 255), -- пурпурный
     ESP_BUILDING_COLOR = Color3.fromRGB(100, 150, 255),
     ESP_ITEM_COLOR = Color3.fromRGB(0, 255, 100),
     ESP_NPC_COLOR = Color3.fromRGB(255, 70, 70),
@@ -40,8 +40,7 @@ local CONFIG = {
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
     TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
     GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
-    STRONGHOLD_BUILDING_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding"},
-    CHEST_KEYWORDS = {"chestdef", "diamondchest", "strongholdchest", "item chest", "stonechest", "mossy chest"},
+    STRONGHOLD_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding"},
 }
 
 -- ========== STATE ==========
@@ -54,8 +53,8 @@ local worldCleanEnabled = false
 local bypassConnection = nil
 local originalLighting = {}
 local removedObjects = {}
-local savedPosition = Vector3.new(0, 0, 0)
-local savedCFrame = CFrame.new()
+local savedPosition = nil
+local savedCFrame = nil
 
 -- ========== UI ==========
 local ScreenGui = Instance.new("ScreenGui")
@@ -83,7 +82,7 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON v3.3 FULL ★"
+Title.Text = "★ NEON v3.4 STABLE ★"
 Title.TextColor3 = Color3.fromRGB(0, 255, 200)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 12
@@ -117,10 +116,10 @@ local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 144, Color3.fromRGB(255,
 local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(200, 150, 255))
 local WorldBtn = CreateButton("CLEAN WORLD: ВЫКЛ (R)", 210, Color3.fromRGB(255, 150, 50))
 local TpChestBtn = CreateButton("TP К СУНДУКУ (T)", 243, Color3.fromRGB(0, 255, 100))
-local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(255, 100, 200))
+local TpStrongBtn = CreateButton("TP К СТРОНГХОЛДУ (Y)", 276, Color3.fromRGB(200, 0, 255))
 local ChunkBtn = CreateButton("ЗАГРУЗИТЬ ЧАНКИ (C)", 309, Color3.fromRGB(0, 200, 255))
 local RemoteBtn = CreateButton("СКАН REMOTES (U)", 342, Color3.fromRGB(255, 200, 100))
-local ResetTpBtn = CreateButton("СБРОСИТЬ ANTI-TP (R)", 375, Color3.fromRGB(255, 100, 100))
+local ResetTpBtn = CreateButton("СБРОСИТЬ ANTI-TP", 375, Color3.fromRGB(255, 100, 100))
 
 -- ========== HELPERS ==========
 local function getHRP()
@@ -174,7 +173,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- ========== ANTI-TP (ENHANCED) ==========
+-- ========== ANTI-TP (SIMPLE — БЕЗ METATABLE) ==========
 local function enableAntiTP()
     local hrp = getHRP()
     if not hrp then return end
@@ -183,37 +182,12 @@ local function enableAntiTP()
     savedPosition = hrp.Position
     savedCFrame = hrp.CFrame
     
-    -- Безопасный хук через metatable (если поддерживается)
-    local success, mt = pcall(function() return getrawmetatable(game) end)
-    if success and mt then
-        local oldIndex = mt.__index
-        local oldNewIndex = mt.__newindex
-        setreadonly(mt, false)
-        
-        mt.__index = newcclosure(function(self, key)
-            if self == hrp and key == "CFrame" then return savedCFrame end
-            if self == hrp and key == "Position" then return savedPosition end
-            return oldIndex(self, key)
-        end)
-        
-        mt.__newindex = newcclosure(function(self, key, value)
-            if self == hrp and key == "CFrame" then
-                savedCFrame = value
-                savedPosition = value.Position
-                return oldNewIndex(self, key, value)
-            end
-            return oldNewIndex(self, key, value)
-        end)
-        
-        setreadonly(mt, true)
-    end
-    
-    -- Мониторинг позиции
     bypassConnection = RunService.Heartbeat:Connect(function()
         if not bypassEnabled then return end
         local h = getHRP()
         if not h then return end
         
+        -- Если телепортировало резко — возвращаем
         local dist = (h.Position - savedPosition).Magnitude
         if dist > 100 then
             h.CFrame = savedCFrame
@@ -223,7 +197,7 @@ local function enableAntiTP()
         end
     end)
     
-    print("[ANTI-TP] Enhanced bypass enabled")
+    print("[ANTI-TP] Simple bypass enabled")
 end
 
 local function setBypass(state)
@@ -398,7 +372,7 @@ local function clearESP()
     espObjects = {}
 end
 
-local function createESP(target, color, label)
+local function createESP(target, color, label, big)
     if not target then return end
     local box = Instance.new("BoxHandleAdornment")
     box.Size = Vector3.new(4, 4, 4)
@@ -412,9 +386,13 @@ local function createESP(target, color, label)
 
     if label then
         local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 120, 0, 20)
+        if big then
+            billboard.Size = UDim2.new(0, 300, 0, 40)
+        else
+            billboard.Size = UDim2.new(0, 120, 0, 20)
+        end
         billboard.AlwaysOnTop = true
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.StudsOffset = Vector3.new(0, 5, 0)
         billboard.Adornee = target
         billboard.Parent = target
         local text = Instance.new("TextLabel")
@@ -422,9 +400,10 @@ local function createESP(target, color, label)
         text.BackgroundTransparency = 1
         text.Text = label
         text.TextColor3 = color
-        text.Font = Enum.Font.GothamBold
-        text.TextSize = 10
+        text.Font = Enum.Font.GothamBlack
+        text.TextSize = big and 24 or 10
         text.TextStrokeTransparency = 0
+        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         text.Parent = billboard
         table.insert(espObjects, billboard)
     end
@@ -439,11 +418,11 @@ local function updateESP()
     if items then
         for _, obj in ipairs(items:GetChildren()) do
             if obj.Name:lower():find("chest") then
-                createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name)
+                createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name, false)
             elseif obj.Name:lower() == "log" then
-                createESP(obj, CONFIG.ESP_LOG_COLOR, "LOG")
+                createESP(obj, CONFIG.ESP_LOG_COLOR, "LOG", false)
             elseif obj:IsA("Model") or obj:IsA("BasePart") then
-                createESP(obj, CONFIG.ESP_ITEM_COLOR, obj.Name)
+                createESP(obj, CONFIG.ESP_ITEM_COLOR, obj.Name, false)
             end
         end
     end
@@ -454,16 +433,18 @@ local function updateESP()
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                -- Стронгхолд
-                for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
+                -- Стронгхолд — большой пурпурный
+                local isStronghold = false
+                for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
                     if n:find(kw) then
-                        createESP(landmark, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD ★")
+                        isStronghold = true
                         break
                     end
                 end
-                -- Здания
-                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
-                    createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name)
+                if isStronghold then
+                    createESP(landmark, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD ★", true)
+                elseif n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
+                    createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name, false)
                 end
             end
         end
@@ -474,7 +455,7 @@ local function updateESP()
     if chars then
         for _, npc in ipairs(chars:GetChildren()) do
             if npc:IsA("Model") and npc:FindFirstChildOfClass("Humanoid") then
-                createESP(npc, CONFIG.ESP_NPC_COLOR, npc.Name)
+                createESP(npc, CONFIG.ESP_NPC_COLOR, npc.Name, false)
             end
         end
     end
@@ -486,18 +467,19 @@ local function setESP(state)
     if state then updateESP() else clearESP() end
 end
 
--- ========== FIND STRONGHOLD ==========
+-- ========== FIND STRONGHOLD BUILDING (FIXED) ==========
 local function findStrongholdBuilding()
     local found = {}
+    
+    -- 1. Ищем по всей карте
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
+        if obj:IsA("Model") then
             local n = obj.Name:lower()
-            for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
+            for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
                 if n:find(kw) then
-                    if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) 
-                       and not obj:IsA("Bone") 
-                       and not obj:IsA("Motor6D")
-                       and not obj:IsDescendantOf(LocalPlayer.Character or game) then
+                    -- Исключаем кости, NPC, персонажей
+                    if not obj:IsDescendantOf(LocalPlayer.Character or game) 
+                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
                         table.insert(found, obj)
                         break
                     end
@@ -506,6 +488,42 @@ local function findStrongholdBuilding()
         end
     end
     
+    -- 2. Если не нашли — ищем по ключевым словам в имени (Stronghold, Fortress, Castle)
+    if #found == 0 then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") then
+                local n = obj.Name:lower()
+                if n:find("stronghold") or n:find("fortress") or n:find("castle") then
+                    if not obj:IsDescendantOf(LocalPlayer.Character or game) 
+                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
+                        table.insert(found, obj)
+                    end
+                end
+            end
+        end
+    end
+    
+    -- 3. Если всё ещё не нашли — ищем по сундуку ChestDEF внутри Campground
+    if #found == 0 then
+        local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
+        if cg then
+            for _, obj in ipairs(cg:GetDescendants()) do
+                if obj.Name == "ChestDEF" then
+                    -- Возвращаем родителя сундука (здание)
+                    local parent = obj.Parent
+                    while parent and parent ~= cg do
+                        if parent:IsA("Model") then
+                            table.insert(found, parent)
+                            break
+                        end
+                        parent = parent.Parent
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Возвращаем ближайший
     if #found > 0 then
         local hrp = getHRP()
         if not hrp then return found[1] end
@@ -558,7 +576,6 @@ local function teleportTo(target)
     else
         return false
     end
-    -- Сохраняем позицию для Anti-TP
     savedCFrame = pos + Vector3.new(0, 5, 0)
     savedPosition = savedCFrame.Position
     hrp.CFrame = savedCFrame
@@ -567,8 +584,8 @@ end
 
 -- ========== RESET ANTI-TP ==========
 local function resetAntiTP()
-    savedCFrame = CFrame.new(0, 0, 0)
-    savedPosition = Vector3.new(0, 0, 0)
+    savedCFrame = nil
+    savedPosition = nil
     print("[ANTI-TP] Reset")
 end
 
@@ -592,7 +609,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             teleportTo(strong)
             print("[STRONGHOLD] TP to: " .. strong:GetFullName())
         else
-            print("[STRONGHOLD] Building not found!")
+            print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
         end
     end
 end)
@@ -614,7 +631,7 @@ TpStrongBtn.MouseButton1Click:Connect(function()
         teleportTo(strong)
         print("[STRONGHOLD] TP to: " .. strong:GetFullName())
     else
-        print("[STRONGHOLD] Building not found!")
+        print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
     end
 end)
 ChunkBtn.MouseButton1Click:Connect(function()
@@ -652,4 +669,4 @@ TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingD
     Position = UDim2.new(0.5, -140, 0.1, 0)
 }):Play()
 
-print("[NEON] v3.3 FULL loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, U=remotes, T=chest, Y=stronghold")
+print("[NEON] v3.4 STABLE loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, U=remotes, T=chest, Y=stronghold")
