@@ -1,555 +1,325 @@
---[[
-    NEON SCANNER v1.2 — CULTIST CAMP HUNTER + TP
-    Author: I.S.-1
-    Fixes:
-    - Search for Cultist Camp by keywords + blue crystal
-    - Auto-TP after finding camp
-    - Manual TP to saved camp (Y)
-    - Anti-TP doesn't return when interacting
---]]
-
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
 local Camera = workspace.CurrentCamera
 
--- ========== CLEANUP ==========
-local uiName = "NeonScanner"
+local uiName = "GhostWare_99Nights"
+
+-- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+getgenv().Noclip = false
+getgenv().AntiTP = false
+getgenv().AutoUnderground = false
+getgenv().FlySpeed = 50
+
 if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end
 if LocalPlayer.PlayerGui:FindFirstChild(uiName) then LocalPlayer.PlayerGui[uiName]:Destroy() end
 
--- ========== CONFIG ==========
-local CONFIG = {
-    FLY_SPEED = 100,
-    SCAN_DEPTH = -500,
-    SCAN_RANGE = 2000,
-    ESP_CHEST_COLOR = Color3.fromRGB(255, 200, 0),
-    ESP_CAMP_COLOR = Color3.fromRGB(200, 0, 255),
-    ESP_CULTIST_COLOR = Color3.fromRGB(255, 0, 0),
-    NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
-    CAMP_KEYWORDS = {"cultist", "cult", "ritual", "altar", "crypt", "temple", "stronghold", "camp"},
-    EXCLUDE_KEYWORDS = {"bat", "bone", "npc", "player", "tree", "rock", "grass"},
-}
-
--- ========== STATE ==========
-local flyEnabled = false
-local noclipEnabled = false
-local espEnabled = false
-local bypassEnabled = false
-local nightVisionEnabled = false
-local scanEnabled = false
-local interacting = false
-local savedCamp = nil -- СЮДА СОХРАНЯЕТСЯ НАЙДЕННЫЙ ЛАГЕРЬ
-local bypassConnection = nil
-local originalLighting = {}
-local savedPos = nil
-local savedCF = nil
-
--- ========== UI ==========
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = uiName
 ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local success = pcall(function() ScreenGui.Parent = (gethui and gethui()) or CoreGui end)
+if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
+-- Главный Фрейм (Стиль Voidware)
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 260, 0, 370)
-Main.Position = UDim2.new(0.5, -130, 0.15, 0)
-Main.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+Main.Size = UDim2.new(0, 420, 0, 300)
+Main.Position = UDim2.new(0.5, -210, 0.2, 0)
+Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
 Main.Parent = ScreenGui
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 
-local MainStroke = Instance.new("UIStroke", Main)
-MainStroke.Thickness = 1.5
-MainStroke.Color = Color3.fromRGB(200, 0, 255)
-MainStroke.Transparency = 0.3
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+local UIStroke = Instance.new("UIStroke", Main)
+UIStroke.Thickness = 1
+UIStroke.Color = Color3.fromRGB(30, 45, 40)
+
+-- Сайдбар
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 140, 1, 0)
+Sidebar.BackgroundColor3 = Color3.fromRGB(16, 20, 20)
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Main
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
+
+local Divider = Instance.new("Frame")
+Divider.Size = UDim2.new(0, 10, 1, 0)
+Divider.Position = UDim2.new(1, -5, 0, 0)
+Divider.BackgroundColor3 = Color3.fromRGB(16, 20, 20)
+Divider.BorderSizePixel = 0
+Divider.Parent = Sidebar
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ CULTIST CAMP HUNTER v1.2 ★"
-Title.TextColor3 = Color3.fromRGB(200, 0, 255)
-Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 10
-Title.BorderSizePixel = 0
-Title.Parent = Main
-Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Position = UDim2.new(0, 10, 0, 10)
+Title.Text = "GhostWare\nUnderground"
+Title.TextColor3 = Color3.fromRGB(240, 240, 240)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 13
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
+Title.Parent = Sidebar
 
-local function CreateButton(text, yPos, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 30)
-    btn.Position = UDim2.new(0, 10, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-    btn.TextColor3 = color
-    btn.Text = text
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 10
-    btn.AutoButtonColor = false
-    btn.Parent = Main
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    local stroke = Instance.new("UIStroke", btn)
-    stroke.Color = color
-    stroke.Thickness = 1
-    stroke.Transparency = 0.5
-    return btn
-end
+local LoadingBg = Instance.new("Frame")
+LoadingBg.Size = UDim2.new(1, -20, 0, 4)
+LoadingBg.Position = UDim2.new(0, 10, 0, 60)
+LoadingBg.BackgroundColor3 = Color3.fromRGB(25, 35, 30)
+LoadingBg.Parent = Sidebar
+Instance.new("UICorner", LoadingBg).CornerRadius = UDim.new(1, 0)
 
-local FlyBtn = CreateButton("FLY: ВЫКЛ (F)", 45, Color3.fromRGB(0, 255, 200))
-local NoclipBtn = CreateButton("NOCLIP: ВЫКЛ (G)", 78, Color3.fromRGB(255, 200, 0))
-local EspBtn = CreateButton("ESP: ВЫКЛ (H)", 111, Color3.fromRGB(100, 150, 255))
-local BypassBtn = CreateButton("ANTI-TP: ВЫКЛ (B)", 144, Color3.fromRGB(255, 0, 150))
-local NightBtn = CreateButton("NIGHT VISION: ВЫКЛ (N)", 177, Color3.fromRGB(200, 150, 255))
-local ScanBtn = CreateButton("AUTO-SCAN: ВЫКЛ (X)", 210, Color3.fromRGB(255, 0, 200))
-local TpCampBtn = CreateButton("ТП К ЛАГЕРЮ (Y)", 243, Color3.fromRGB(200, 0, 255))
-local InteractBtn = CreateButton("РЕЖИМ ЛУТА: ВЫКЛ (E)", 276, Color3.fromRGB(0, 255, 100))
-local StopScanBtn = CreateButton("СТОП СКАН (Z)", 309, Color3.fromRGB(255, 100, 100))
-local ClearCampBtn = CreateButton("СБРОСИТЬ ЛАГЕРЬ", 342, Color3.fromRGB(255, 150, 50))
+local LoadingBar = Instance.new("Frame")
+LoadingBar.Size = UDim2.new(0, 0, 1, 0)
+LoadingBar.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+LoadingBar.Parent = LoadingBg
+Instance.new("UICorner", LoadingBar).CornerRadius = UDim.new(1, 0)
 
--- ========== HELPERS ==========
-local function getHRP()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    return char:FindFirstChild("HumanoidRootPart")
-end
-
--- ========== FLY ==========
-local function setFly(state)
-    flyEnabled = state
-    FlyBtn.Text = "FLY: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (F)"
-    local hrp = getHRP()
-    if hrp then
-        local humanoid = hrp.Parent:FindFirstChildOfClass("Humanoid")
-        if humanoid then humanoid.PlatformStand = state end
-    end
-end
-
-RunService.RenderStepped:Connect(function()
-    if not flyEnabled or scanEnabled then return end
-    local hrp = getHRP()
-    if not hrp then return end
-    local move = Vector3.new(0, 0, 0)
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
-    if move.Magnitude > 0 then hrp.Velocity = move * CONFIG.FLY_SPEED else hrp.Velocity = Vector3.new(0, 0, 0) end
-end)
-
--- ========== NOCLIP ==========
-local function setNoclip(state)
-    noclipEnabled = state
-    NoclipBtn.Text = "NOCLIP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (G)"
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = not state end
-        end
-    end
-end
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.5)
-    if noclipEnabled then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
-        end
-    end
-end)
-
--- ========== ANTI-TP ==========
-local function enableAntiTP()
-    local hrp = getHRP()
-    if not hrp then return end
-    if bypassConnection then bypassConnection:Disconnect() end
-    savedPos = hrp.Position
-    savedCF = hrp.CFrame
-    bypassConnection = RunService.Heartbeat:Connect(function()
-        if not bypassEnabled then return end
-        if interacting then return end
-        local h = getHRP()
-        if not h then return end
-        local dist = (h.Position - savedPos).Magnitude
-        if dist > 100 then
-            h.CFrame = savedCF
-        else
-            savedCF = h.CFrame
-            savedPos = h.Position
-        end
-    end)
-end
-
-local function setBypass(state)
-    bypassEnabled = state
-    BypassBtn.Text = "ANTI-TP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (B)"
-    if state then enableAntiTP()
-    elseif bypassConnection then bypassConnection:Disconnect() bypassConnection = nil end
-end
-
--- ========== NIGHT VISION ==========
-local function setNightVision(state)
-    nightVisionEnabled = state
-    NightBtn.Text = "NIGHT VISION: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
-    if state then
-        originalLighting = {
-            Ambient = Lighting.Ambient,
-            OutdoorAmbient = Lighting.OutdoorAmbient,
-            Brightness = Lighting.Brightness,
-            ClockTime = Lighting.ClockTime,
-            FogEnd = Lighting.FogEnd,
-            FogStart = Lighting.FogStart,
-            FogColor = Lighting.FogColor,
-            GlobalShadows = Lighting.GlobalShadows,
-        }
-        Lighting.Ambient = CONFIG.NIGHT_VISION_COLOR
-        Lighting.OutdoorAmbient = CONFIG.NIGHT_VISION_COLOR
-        Lighting.Brightness = 3
-        Lighting.ClockTime = 12
-        Lighting.FogEnd = 100000
-        Lighting.FogStart = 100000
-        Lighting.FogColor = CONFIG.NIGHT_VISION_COLOR
-        Lighting.GlobalShadows = false
-        local hrp = getHRP()
-        if hrp then
-            local light = hrp:FindFirstChild("NeonLight") or Instance.new("PointLight")
-            light.Name = "NeonLight"
-            light.Brightness = 5
-            light.Range = 100
-            light.Color = CONFIG.NIGHT_VISION_COLOR
-            light.Parent = hrp
-        end
-    else
-        if originalLighting.Ambient then
-            Lighting.Ambient = originalLighting.Ambient
-            Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
-            Lighting.Brightness = originalLighting.Brightness
-            Lighting.ClockTime = originalLighting.ClockTime
-            Lighting.FogEnd = originalLighting.FogEnd
-            Lighting.FogStart = originalLighting.FogStart
-            Lighting.FogColor = originalLighting.FogColor
-            Lighting.GlobalShadows = originalLighting.GlobalShadows
-        end
-        local hrp = getHRP()
-        if hrp and hrp:FindFirstChild("NeonLight") then hrp.NeonLight:Destroy() end
-    end
-end
-
--- ========== ESP ==========
-local espObjects = {}
-
-local function clearESP()
-    for _, obj in ipairs(espObjects) do
-        if obj and obj.Parent then obj:Destroy() end
-    end
-    espObjects = {}
-end
-
-local function createESP(target, color, label, big)
-    if not target then return end
-    local box = Instance.new("BoxHandleAdornment")
-    box.Size = Vector3.new(4, 4, 4)
-    box.Transparency = 0.5
-    box.Color3 = color
-    box.AlwaysOnTop = true
-    box.ZIndex = 10
-    box.Adornee = target
-    box.Parent = target
-    table.insert(espObjects, box)
-
-    if label then
-        local billboard = Instance.new("BillboardGui")
-        if big then
-            billboard.Size = UDim2.new(0, 300, 0, 50)
-        else
-            billboard.Size = UDim2.new(0, 120, 0, 20)
-        end
-        billboard.AlwaysOnTop = true
-        billboard.StudsOffset = Vector3.new(0, 5, 0)
-        billboard.Adornee = target
-        billboard.Parent = target
-        local text = Instance.new("TextLabel")
-        text.Size = UDim2.new(1, 0, 1, 0)
-        text.BackgroundTransparency = 1
-        text.Text = label
-        text.TextColor3 = color
-        text.Font = Enum.Font.GothamBlack
-        text.TextSize = big and 24 or 10
-        text.TextStrokeTransparency = 0
-        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        text.Parent = billboard
-        table.insert(espObjects, billboard)
-    end
-end
-
-local function updateESP()
-    clearESP()
-    if not espEnabled then return end
-
-    -- Культистский лагерь (сохранённый)
-    if savedCamp then
-        createESP(savedCamp, CONFIG.ESP_CAMP_COLOR, "★ CULTIST CAMP ★", true)
-    end
-
-    -- Items (сундуки)
-    local items = workspace:FindFirstChild("Items")
-    if items then
-        for _, obj in ipairs(items:GetChildren()) do
-            if obj.Name:lower():find("chest") then
-                createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name, false)
-            end
-        end
-    end
-
-    -- NPC / культисты
-    local chars = workspace:FindFirstChild("Characters")
-    if chars then
-        for _, npc in ipairs(chars:GetChildren()) do
-            if npc:IsA("Model") and npc:FindFirstChildOfClass("Humanoid") then
-                local n = npc.Name:lower()
-                if n:find("cultist") or n:find("cult") then
-                    createESP(npc, CONFIG.ESP_CULTIST_COLOR, "CULTIST: " .. npc.Name, true)
-                end
-            end
-        end
-    end
-end
-
-local function setESP(state)
-    espEnabled = state
-    EspBtn.Text = "ESP: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (H)"
-    if state then updateESP() else clearESP() end
-end
-
--- ========== FIND CULTIST CAMP ==========
-local function findCultistCamp()
-    -- 1. Ищем по имени модели с ключевыми словами
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local n = obj.Name:lower()
-            for _, kw in ipairs(CONFIG.CAMP_KEYWORDS) do
-                if n:find(kw) then
-                    local skip = false
-                    for _, ex in ipairs(CONFIG.EXCLUDE_KEYWORDS) do
-                        if n:find(ex) then skip = true break end
-                    end
-                    if not skip and not obj:IsDescendantOf(LocalPlayer.Character or game) 
-                       and not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
-                        return obj
-                    end
-                end
-            end
-        end
-    end
-    
-    -- 2. Ищем здание с синим кристаллом
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("PointLight") then
-            local c = obj.Color
-            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
-                local parent = obj.Parent
-                while parent and parent ~= workspace do
-                    if parent:IsA("Model") then
-                        return parent
-                    end
-                    parent = parent.Parent
-                end
-            end
-        end
-    end
-    
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Part") or obj:IsA("MeshPart") then
-            local c = obj.Color
-            if c.R < 0.3 and c.G > 0.5 and c.B > 0.8 then
-                local parent = obj.Parent
-                while parent and parent ~= workspace do
-                    if parent:IsA("Model") then
-                        return parent
-                    end
-                    parent = parent.Parent
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- ========== TELEPORT TO CAMP ==========
-local function teleportToCamp()
-    if not savedCamp then
-        print("[CAMP] No camp saved! Run AUTO-SCAN (X) first.")
-        TpCampBtn.Text = "ЛАГЕРЬ НЕ НАЙДЕН!"
-        task.wait(2)
-        TpCampBtn.Text = "ТП К ЛАГЕРЮ (Y)"
-        return
-    end
-    
-    local hrp = getHRP()
-    if not hrp then return end
-    
-    local pos
-    if savedCamp:IsA("Model") then
-        pos = savedCamp.PrimaryPart and savedCamp.PrimaryPart.Position or savedCamp:GetPivot().Position
-    elseif savedCamp:IsA("BasePart") then
-        pos = savedCamp.Position
-    end
-    
-    if pos then
-        -- Сохраняем позицию для Anti-TP
-        savedCF = CFrame.new(pos + Vector3.new(0, 5, 0))
-        savedPos = savedCF.Position
-        hrp.CFrame = savedCF
-        print("[CAMP] TP to: " .. savedCamp:GetFullName())
-        TpCampBtn.Text = "★ ТП К ЛАГЕРЮ ★"
-        task.wait(2)
-        TpCampBtn.Text = "ТП К ЛАГЕРЮ (Y)"
-    end
-end
-
--- ========== AUTO-SCAN ==========
-local function autoScan()
-    if scanEnabled then return end
-    scanEnabled = true
-    ScanBtn.Text = "AUTO-SCAN: ВКЛ (X)"
-    
-    local hrp = getHRP()
-    if not hrp then
-        scanEnabled = false
-        return
-    end
-    
-    local startPos = hrp.Position
-    local scanY = CONFIG.SCAN_DEPTH
-    
-    hrp.CFrame = CFrame.new(startPos.X, scanY, startPos.Z)
-    task.wait(0.5)
-    
-    print("[SCAN] Starting under-map scan...")
-    
-    local step = 100
-    local radius = 0
-    local maxRadius = CONFIG.SCAN_RANGE
-    local angle = 0
-    
-    while scanEnabled and radius < maxRadius do
-        local x = startPos.X + math.cos(math.rad(angle)) * radius
-        local z = startPos.Z + math.sin(math.rad(angle)) * radius
-        
-        hrp.CFrame = CFrame.new(x, scanY, z)
-        task.wait(0.2)
-        
-        local camp = findCultistCamp()
-        if camp then
-            scanEnabled = false
-            savedCamp = camp -- СОХРАНЯЕМ НАЙДЕННЫЙ ЛАГЕРЬ
-            ScanBtn.Text = "AUTO-SCAN: НАЙДЕНО!"
-            print("[SCAN] Cultist camp found: " .. camp:GetFullName())
-            print("[SCAN] Camp saved! Press Y to TP.")
-            
-            -- АВТО-ТП К ЛАГЕРЮ
-            task.wait(0.5)
-            teleportToCamp()
-            
-            -- Возвращаем кнопку
-            task.wait(2)
-            ScanBtn.Text = "AUTO-SCAN: ВЫКЛ (X)"
-            return
-        end
-        
-        angle = angle + 15
-        if angle >= 360 then
-            angle = 0
-            radius = radius + step
-            print("[SCAN] Radius: " .. radius)
-        end
-    end
-    
-    scanEnabled = false
-    ScanBtn.Text = "AUTO-SCAN: НЕ НАЙДЕНО"
-    print("[SCAN] Scan finished. Camp not found.")
-    
-    hrp.CFrame = CFrame.new(startPos)
-end
-
-local function stopScan()
-    scanEnabled = false
-    ScanBtn.Text = "AUTO-SCAN: ВЫКЛ (X)"
-    print("[SCAN] Stopped by user.")
-end
-
--- ========== INTERACT MODE ==========
-local function setInteractMode(state)
-    interacting = state
-    if state then
-        InteractBtn.Text = "РЕЖИМ ЛУТА: ВКЛ (E)"
-        InteractBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-        print("[INTERACT] Anti-TP disabled for looting")
-    else
-        InteractBtn.Text = "РЕЖИМ ЛУТА: ВЫКЛ (E)"
-        InteractBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
-        print("[INTERACT] Anti-TP enabled")
-    end
-end
-
--- ========== CLEAR CAMP ==========
-local function clearCamp()
-    savedCamp = nil
-    print("[CAMP] Saved camp cleared.")
-    ClearCampBtn.Text = "ЛАГЕРЬ СБРОШЕН"
-    task.wait(2)
-    ClearCampBtn.Text = "СБРОСИТЬ ЛАГЕРЬ"
-end
-
--- ========== INPUT ==========
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.F then setFly(not flyEnabled)
-    elseif input.KeyCode == Enum.KeyCode.G then setNoclip(not noclipEnabled)
-    elseif input.KeyCode == Enum.KeyCode.H then setESP(not espEnabled)
-    elseif input.KeyCode == Enum.KeyCode.B then setBypass(not bypassEnabled)
-    elseif input.KeyCode == Enum.KeyCode.N then setNightVision(not nightVisionEnabled)
-    elseif input.KeyCode == Enum.KeyCode.X then autoScan()
-    elseif input.KeyCode == Enum.KeyCode.Z then stopScan()
-    elseif input.KeyCode == Enum.KeyCode.E then setInteractMode(not interacting)
-    elseif input.KeyCode == Enum.KeyCode.Y then teleportToCamp()
-    end
-end)
-
--- ========== BUTTON HANDLERS ==========
-FlyBtn.MouseButton1Click:Connect(function() setFly(not flyEnabled) end)
-NoclipBtn.MouseButton1Click:Connect(function() setNoclip(not noclipEnabled) end)
-EspBtn.MouseButton1Click:Connect(function() setESP(not espEnabled) end)
-BypassBtn.MouseButton1Click:Connect(function() setBypass(not bypassEnabled) end)
-NightBtn.MouseButton1Click:Connect(function() setNightVision(not nightVisionEnabled) end)
-ScanBtn.MouseButton1Click:Connect(function() autoScan() end)
-TpCampBtn.MouseButton1Click:Connect(function() teleportToCamp() end)
-InteractBtn.MouseButton1Click:Connect(function() setInteractMode(not interacting) end)
-StopScanBtn.MouseButton1Click:Connect(function() stopScan() end)
-ClearCampBtn.MouseButton1Click:Connect(function() clearCamp() end)
-
--- ========== AUTO-UPDATE ESP ==========
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if espEnabled then updateESP() end
-    end
-end)
-
--- ========== APPEAR ==========
-Main.BackgroundTransparency = 1
-Main.Position = UDim2.new(0.5, -130, 0.15, 30)
-TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-    BackgroundTransparency = 0,
-    Position = UDim2.new(0.5, -130, 0.15, 0)
+TweenService:Create(LoadingBar, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Size = UDim2.new(1, 0, 1, 0)
 }):Play()
 
-print("[NEON] v1.2 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, X=scan, Y=tp camp, Z=stop, E=interact")
+-- Консоль
+local LogFrame = Instance.new("ScrollingFrame")
+LogFrame.Size = UDim2.new(1, -20, 1, -140)
+LogFrame.Position = UDim2.new(0, 10, 0, 75)
+LogFrame.BackgroundColor3 = Color3.fromRGB(10, 12, 12)
+LogFrame.BorderSizePixel = 0
+LogFrame.ScrollBarThickness = 1
+LogFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+LogFrame.Parent = Sidebar
+Instance.new("UICorner", LogFrame).CornerRadius = UDim.new(0, 6)
+
+local LogText = Instance.new("TextLabel")
+LogText.Size = UDim2.new(1, -5, 1, 0)
+LogText.Position = UDim2.new(0, 2, 0, 0)
+LogText.BackgroundTransparency = 1
+LogText.TextColor3 = Color3.fromRGB(150, 170, 160)
+LogText.Font = Enum.Font.Code
+LogText.TextSize = 10
+LogText.TextXAlignment = Enum.TextXAlignment.Left
+LogText.TextYAlignment = Enum.TextYAlignment.Top
+LogText.TextWrapped = true
+LogText.Text = "> Загрузка GhostWare...\n> Готов к обходу."
+LogText.Parent = LogFrame
+
+local function AddLog(msg, isErr)
+    local color = isErr and '<font color="rgb(255,80,80)">' or '<font color="rgb(0,200,120)">'
+    LogText.RichText = true
+    LogText.Text = string.format("%s[%s] %s</font>\n", color, os.date("%X"), msg) .. LogText.Text
+end
+
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, -150, 1, -20)
+Content.Position = UDim2.new(0, 150, 0, 10)
+Content.BackgroundTransparency = 1
+Content.Parent = Main
+
+local UIListLayout = Instance.new("UIListLayout", Content)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+local function CreateVoidToggle(name, text)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(1, 0, 0, 45)
+    btn.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Text = "    " .. text
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 13
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.AutoButtonColor = false
+    btn.Parent = Content
+    
+    local Indicator = Instance.new("Frame")
+    Indicator.Size = UDim2.new(0, 4, 0, 20)
+    Indicator.Position = UDim2.new(0, 0, 0.5, -10)
+    Indicator.BackgroundColor3 = Color3.fromRGB(40, 45, 45)
+    Indicator.BorderSizePixel = 0
+    Indicator.Parent = btn
+    Instance.new("UICorner", Indicator).CornerRadius = UDim.new(1, 0)
+    
+    btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 22, 25)}):Play() end)
+    btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(12, 14, 15)}):Play() end)
+    
+    return btn, Indicator
+end
+
+local AntiTpBtn, AntiTpInd = CreateVoidToggle("AntiTP", "1. Anti-TP & Barrier Bypass")
+local NoclipBtn, NoclipInd = CreateVoidToggle("Noclip", "2. Fly & Noclip (Сквозь стены)")
+local SearchBtn, SearchInd = CreateVoidToggle("Search", "3. Искать Стронгхолд ПОД картой")
+
+-- 1. ANTI-TP (УДАЛЕНИЕ ТРИГГЕРОВ И БЛОК ТЕЛЕПОРТОВ)
+local AntiTpConn
+AntiTpBtn.MouseButton1Click:Connect(function()
+    getgenv().AntiTP = not getgenv().AntiTP
+    if getgenv().AntiTP then
+        TweenService:Create(AntiTpInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        AddLog("Анти-ТП включен. Удаляю барьеры...")
+        
+        -- Удаляем все зоны телепортации на карте
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("TouchTransmitter") and not obj:IsDescendantOf(LocalPlayer.Character) then
+                obj:Destroy()
+            end
+        end
+        
+        -- Жестко привязываем позицию, если игра пытается нас откинуть
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local lastPos = hrp.Position
+            AntiTpConn = RunService.Stepped:Connect(function()
+                if not getgenv().Noclip and not getgenv().AutoUnderground then
+                    -- Если нас телепортировало больше чем на 100 стадов за кадр без нашей команды - возвращаем
+                    if (hrp.Position - lastPos).Magnitude > 100 then
+                        hrp.CFrame = CFrame.new(lastPos)
+                        AddLog("Заблокирована попытка телепортации!", true)
+                    else
+                        lastPos = hrp.Position
+                    end
+                end
+            end)
+        end
+    else
+        TweenService:Create(AntiTpInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Анти-ТП отключен.")
+        if AntiTpConn then AntiTpConn:Disconnect() end
+    end
+end)
+
+-- 2. FLY & NOCLIP
+local FlyBody, FlyGyro, FlyConn, NoclipConn
+local ctrl = {f = 0, b = 0, l = 0, r = 0}
+local lastCtrl = {f = 0, b = 0, l = 0, r = 0}
+local speed = 0
+
+-- Управление для мобилок (джойстик) и ПК
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.W then ctrl.f = 1
+    elseif input.KeyCode == Enum.KeyCode.S then ctrl.b = -1
+    elseif input.KeyCode == Enum.KeyCode.A then ctrl.l = -1
+    elseif input.KeyCode == Enum.KeyCode.D then ctrl.r = 1 end
+end)
+UserInputService.InputEnded:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.W then ctrl.f = 0
+    elseif input.KeyCode == Enum.KeyCode.S then ctrl.b = 0
+    elseif input.KeyCode == Enum.KeyCode.A then ctrl.l = 0
+    elseif input.KeyCode == Enum.KeyCode.D then ctrl.r = 0 end
+end)
+
+NoclipBtn.MouseButton1Click:Connect(function()
+    getgenv().Noclip = not getgenv().Noclip
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if getgenv().Noclip and hrp then
+        TweenService:Create(NoclipInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+        AddLog("Полет сквозь стены АКТИВЕН.")
+        
+        FlyBody = Instance.new("BodyVelocity")
+        FlyBody.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        FlyBody.Parent = hrp
+        
+        FlyGyro = Instance.new("BodyGyro")
+        FlyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        FlyGyro.P = 1000
+        FlyGyro.Parent = hrp
+        
+        local bg = char:FindFirstChildWhichIsA("Humanoid")
+        if bg then bg.PlatformStand = true end
+        
+        -- Логика полета
+        FlyConn = RunService.RenderStepped:Connect(function()
+            if char and hrp then
+                -- Для мобилок берем вектор движения из Humanoid.MoveDirection, для ПК из кнопок
+                local moveDir = bg.MoveDirection
+                if moveDir.Magnitude > 0 then
+                    FlyBody.Velocity = Camera.CFrame:VectorToWorldSpace(Vector3.new(ctrl.l + ctrl.r, 0, ctrl.f + ctrl.b)) * getgenv().FlySpeed
+                    if ctrl.l == 0 and ctrl.r == 0 and ctrl.f == 0 and ctrl.b == 0 then
+                        -- Мобильный джойстик
+                        FlyBody.Velocity = Camera.CFrame.LookVector * (moveDir.Z * -getgenv().FlySpeed) + Camera.CFrame.RightVector * (moveDir.X * getgenv().FlySpeed)
+                    end
+                else
+                    FlyBody.Velocity = Vector3.new(0, 0, 0)
+                end
+                FlyGyro.CFrame = Camera.CFrame
+            end
+        end)
+        
+        -- Отключаем коллизию (Сквозь стены)
+        NoclipConn = RunService.Stepped:Connect(function()
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end)
+        
+    else
+        TweenService:Create(NoclipInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Полет отключен.")
+        
+        if FlyBody then FlyBody:Destroy() end
+        if FlyGyro then FlyGyro:Destroy() end
+        if FlyConn then FlyConn:Disconnect() end
+        if NoclipConn then NoclipConn:Disconnect() end
+        
+        if char then
+            local hum = char:FindFirstChildWhichIsA("Humanoid")
+            if hum then hum.PlatformStand = false end
+        end
+    end
+end)
+
+-- 3. ПОИСК СТРОНГХОЛДА ПОД КАРТОЙ
+SearchBtn.MouseButton1Click:Connect(function()
+    getgenv().AutoUnderground = not getgenv().AutoUnderground
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if getgenv().AutoUnderground and hrp then
+        TweenService:Create(SearchInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(200, 0, 100)}):Play()
+        AddLog("Ищу Стронгхолд...")
+        
+        task.spawn(function()
+            local target = nil
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Stronghold" or obj.Name == "DiamondChest" then
+                    target = obj
+                    break
+                end
+            end
+            
+            if target then
+                local tPos = target:IsA("Model") and target:GetPivot() or target.CFrame
+                AddLog("Нашел! Ухожу под землю...")
+                
+                -- Отключаем гравитацию, чтобы не упасть в бездну
+                if not getgenv().Noclip then
+                    local bp = Instance.new("BodyPosition")
+                    bp.MaxForce = Vector3.new(0, 9e9, 0)
+                    bp.Position = hrp.Position
+                    bp.Name = "UndergroundHold"
+                    bp.Parent = hrp
+                end
+                
+                -- Телепорт прямо ПОД сундук (на 15 стадов ниже)
+                hrp.CFrame = tPos * CFrame.new(0, -15, 0)
+                AddLog("Ожидаю под сундуком. Включай Noclip и всплывай!")
+            else
+                AddLog("Стронгхолд не найден на карте!", true)
+            end
+            
+            getgenv().AutoUnderground = false
+            TweenService:Create(SearchInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        end)
+    else
+        getgenv().AutoUnderground = false
+        TweenService:Create(SearchInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        if hrp and hrp:FindFirstChild("UndergroundHold") then hrp.UndergroundHold:Destroy() end
+    end
+end)
+
