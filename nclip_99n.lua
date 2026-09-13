@@ -1,16 +1,19 @@
 --[[
-    GHOSTWARE v3.5 — DIAMOND CHEST HUNTER
+    GHOSTWARE v3.6 — REMOTE BLOCKER + CHEST OPENER
     Author: I.S.-1
     Features:
     - Fly (F)
     - Noclip (G)
-    - ESP (H) — Diamond Chest: bright cyan, auto-detect on spawn
+    - ESP (H) — Diamond Chest: bright cyan
     - Anti-TP (B)
     - Night Vision (N)
     - Grid Scan (X)
     - Stop Scan (Z)
     - TP to Found (Y)
     - Debug (J)
+    - Scan Remotes (R)
+    - Block Remote (K)
+    - Force Open Chest (O)
     - Copy Logs (C)
 --]]
 
@@ -49,6 +52,8 @@ local espMode = "highlight"
 local fullLog = ""
 local originalLighting = {}
 local espConnections = {}
+local blockedRemotes = {}
+local remoteHookConnection = nil
 
 -- ========== CLEANUP ==========
 pcall(function()
@@ -75,8 +80,8 @@ end
 
 -- ========== UI ==========
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 400, 0, 440)
-Main.Position = UDim2.new(0.5, -200, 0.12, 0)
+Main.Size = UDim2.new(0, 420, 0, 480)
+Main.Position = UDim2.new(0.5, -210, 0.1, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -88,7 +93,7 @@ UIStroke.Thickness = 1
 UIStroke.Color = Color3.fromRGB(30, 45, 40)
 
 local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 130, 1, 0)
+Sidebar.Size = UDim2.new(0, 140, 1, 0)
 Sidebar.BackgroundColor3 = Color3.fromRGB(16, 20, 20)
 Sidebar.BorderSizePixel = 0
 Sidebar.Parent = Main
@@ -97,7 +102,7 @@ Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
 Title.Position = UDim2.new(0, 10, 0, 10)
-Title.Text = "GhostWare v3.5\nDiamond Hunter"
+Title.Text = "GhostWare v3.6\nRemote Blocker"
 Title.TextColor3 = Color3.fromRGB(240, 240, 240)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 11
@@ -125,7 +130,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "> v3.5 загружен.\n"
+LogText.Text = "> v3.6 загружен.\n"
 LogText.Parent = LogFrame
 
 local function AddLog(msg, isErr)
@@ -136,23 +141,23 @@ local function AddLog(msg, isErr)
 end
 
 local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -140, 1, -20)
-Content.Position = UDim2.new(0, 140, 0, 10)
+Content.Size = UDim2.new(1, -150, 1, -20)
+Content.Position = UDim2.new(0, 150, 0, 10)
 Content.BackgroundTransparency = 1
 Content.Parent = Main
 
 local UIListLayout = Instance.new("UIListLayout", Content)
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.Padding = UDim.new(0, 5)
 
 local function CreateToggle(text)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.Size = UDim2.new(1, 0, 0, 32)
     btn.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
     btn.TextColor3 = Color3.fromRGB(200, 200, 200)
     btn.Text = "    " .. text
     btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 11
+    btn.TextSize = 10
     btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.AutoButtonColor = false
     btn.Parent = Content
@@ -180,6 +185,9 @@ local TpBtn, TpInd = CreateToggle("6. TP К НАЙДЕННОМУ (Y)")
 local StopBtn, StopInd = CreateToggle("7. СТОП СКАН (Z)")
 local DebugBtn, DebugInd = CreateToggle("8. ПОКАЗАТЬ ВСЁ (J)")
 local LogBtn, LogInd = CreateToggle("9. КОПИРОВАТЬ ЛОГ (C)")
+local RemoteScanBtn, RemoteScanInd = CreateToggle("10. СКАН REMOTES (R)")
+local BlockRemoteBtn, BlockRemoteInd = CreateToggle("11. БЛОК ТП-REMOTE (K)")
+local ForceChestBtn, ForceChestInd = CreateToggle("12. ОТКРЫТЬ СУНДУК (O)")
 
 local function getHRP()
     local char = LocalPlayer.Character
@@ -247,7 +255,7 @@ RunService.RenderStepped:Connect(function()
     else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ========== 2. ESP (DIAMOND CHEST — ЧАСТИЧНОЕ СОВПАДЕНИЕ) ==========
+-- ========== 2. ESP ==========
 local function clearESP()
     for _, hl in ipairs(highlightObjects) do
         if hl and hl.Parent then hl:Destroy() end
@@ -328,18 +336,15 @@ local function createESP(target, color, label, big)
     end
 end
 
--- ФУНКЦИЯ ПРОВЕРКИ: ЯВЛЯЕТСЯ ЛИ ОБЪЕКТ DIAMOND CHEST
 local function isDiamondChest(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
-    -- Частичное совпадение: "diamond" И "chest"
     if string.find(name, "diamond") and string.find(name, "chest") then
         return true
     end
     return false
 end
 
--- Проверка на Stronghold / Cultist
 local function isStronghold(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
@@ -349,7 +354,6 @@ local function isStronghold(obj)
     return false
 end
 
--- Проверка на обычный сундук
 local function isNormalChest(obj)
     if not obj or not obj.Name then return false end
     local name = string.lower(obj.Name)
@@ -365,19 +369,16 @@ local function updateESP()
     
     local count = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
-        -- DIAMOND CHEST (ярко-голубой)
         if isDiamondChest(obj) then
             if not obj:IsA("Bone") then
                 createESP(obj, Color3.fromRGB(0, 191, 255), "💎 DIAMOND CHEST 💎", true)
                 count = count + 1
             end
-        -- Stronghold
         elseif isStronghold(obj) then
             if not obj:IsA("Bone") then
                 createESP(obj, Color3.fromRGB(200, 0, 255), "★ STRONGHOLD ★", true)
                 count = count + 1
             end
-        -- Обычные сундуки
         elseif isNormalChest(obj) then
             if not obj:IsA("Bone") then
                 createESP(obj, Color3.fromRGB(255, 200, 0), "Chest", false)
@@ -396,7 +397,6 @@ EspBtn.MouseButton1Click:Connect(function()
         AddLog("ESP ВКЛ (режим: " .. espMode .. ")")
         updateESP()
         
-        -- ПОДПИСКА НА НОВЫЕ ОБЪЕКТЫ (для стриминга)
         local conn = workspace.DescendantAdded:Connect(function(obj)
             if not espEnabled then return end
             if isDiamondChest(obj) then
@@ -416,14 +416,6 @@ EspBtn.MouseButton1Click:Connect(function()
             if conn then conn:Disconnect() end
         end
         espConnections = {}
-    end
-end)
-
-EspBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        espMode = espMode == "highlight" and "box" or "highlight"
-        AddLog("Режим ESP: " .. espMode)
-        if espEnabled then updateESP() end
     end
 end)
 
@@ -453,7 +445,6 @@ local function enableAntiTP()
         local dist = (h.Position - savedPos).Magnitude
         if dist > 150 then
             h.CFrame = savedCF
-            AddLog("Anti-TP: возврат!", true)
         else
             savedCF = h.CFrame
             savedPos = h.Position
@@ -475,11 +466,11 @@ AntiTpBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ========== 4. NIGHT VISION ==========
-local function setNightVision(state)
-    nightVisionEnabled = state
-    NightBtn.Text = "    NIGHT VISION: " .. (state and "ВКЛ" or "ВЫКЛ") .. " (N)"
+NightBtn.MouseButton1Click:Connect(function()
+    nightVisionEnabled = not nightVisionEnabled
+    NightBtn.Text = "    NIGHT VISION: " .. (nightVisionEnabled and "ВКЛ" or "ВЫКЛ") .. " (N)"
     
-    if state then
+    if nightVisionEnabled then
         TweenService:Create(NightInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
         
         originalLighting = {
@@ -511,7 +502,6 @@ local function setNightVision(state)
             light.Color = Color3.fromRGB(0, 255, 200)
             light.Parent = hrp
         end
-        
         AddLog("Night Vision ВКЛ")
     else
         TweenService:Create(NightInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
@@ -531,13 +521,8 @@ local function setNightVision(state)
         if hrp and hrp:FindFirstChild("GhostLight") then
             hrp.GhostLight:Destroy()
         end
-        
         AddLog("Night Vision ВЫКЛ")
     end
-end
-
-NightBtn.MouseButton1Click:Connect(function()
-    setNightVision(not nightVisionEnabled)
 end)
 
 -- ========== 5. GRID SCAN ==========
@@ -565,7 +550,7 @@ ScanBtn.MouseButton1Click:Connect(function()
     
     scanEnabled = true
     TweenService:Create(ScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(200, 0, 150)}):Play()
-    AddLog("=== GRID SCAN НАЧАТ (поиск Diamond Chest) ===")
+    AddLog("=== GRID SCAN НАЧАТ ===")
     
     task.spawn(function()
         local startPos = hrp.Position
@@ -655,23 +640,18 @@ end)
 
 -- ========== 8. DEBUG ==========
 DebugBtn.MouseButton1Click:Connect(function()
-    AddLog("=== ПОИСК DIAMOND CHEST В WORKSPACE ===")
+    AddLog("=== ПОИСК DIAMOND CHEST ===")
     local count = 0
     for _, obj in ipairs(workspace:GetDescendants()) do
-        local n = string.lower(obj.Name)
-        if string.find(n, "diamond") or string.find(n, "chest") then
-            if not obj:IsA("Bone") then
-                count = count + 1
-                AddLog(obj:GetFullName() .. " | " .. obj.ClassName)
-            end
+        if isDiamondChest(obj) and not obj:IsA("Bone") then
+            count = count + 1
+            AddLog(obj:GetFullName() .. " | " .. obj.ClassName)
         end
     end
-    AddLog("Всего найдено: " .. count)
-    
+    AddLog("Всего Diamond Chest: " .. count)
     if count == 0 then
-        AddLog("Diamond Chest НЕ ПРОГРУЖЕН. Лети ближе к Стронгхолду!", true)
+        AddLog("НЕ ПРОГРУЖЕН. Лети ближе!", true)
     end
-    
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 200, 0)}):Play()
     task.wait(1)
     TweenService:Create(DebugInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
@@ -689,18 +669,107 @@ LogBtn.MouseButton1Click:Connect(function()
             success = true
         end
     end)
-    
-    if success then
-        AddLog("Лог скопирован!")
-    else
-        AddLog("setclipboard не поддерживается", true)
-    end
-    
+    if success then AddLog("Лог скопирован!") else AddLog("Нет setclipboard", true) end
     TweenService:Create(LogInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
     task.wait(1)
     TweenService:Create(LogInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
 end)
 
-AddLog("GhostWare v3.5 загружен!")
-AddLog("Diamond Chest: поиск по 'diamond' + 'chest'")
-AddLog("Автопоиск при DescendantAdded")
+-- ========== 10. СКАН REMOTES ==========
+RemoteScanBtn.MouseButton1Click:Connect(function()
+    AddLog("=== СКАН REMOTES ===")
+    local rs = game:GetService("ReplicatedStorage")
+    local count = 0
+    for _, obj in ipairs(rs:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            count = count + 1
+            AddLog("RemoteEvent: " .. obj:GetFullName())
+        elseif obj:IsA("RemoteFunction") then
+            count = count + 1
+            AddLog("RemoteFunction: " .. obj:GetFullName())
+        end
+    end
+    AddLog("Всего: " .. count)
+    TweenService:Create(RemoteScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 200, 0)}):Play()
+    task.wait(1)
+    TweenService:Create(RemoteScanInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+end)
+
+-- ========== 11. БЛОК ТП-REMOTE ==========
+local function enableRemoteBlock()
+    if remoteHookConnection then remoteHookConnection:Disconnect() end
+    
+    -- Хукаем __namecall
+    local mt = getrawmetatable(game)
+    if not mt then AddLog("getrawmetatable не поддерживается", true) return end
+    
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+        
+        -- Блокируем все FireServer на RemoteEvent, которые содержат "tp", "teleport", "position", "check"
+        if method == "FireServer" and self:IsA("RemoteEvent") then
+            local name = string.lower(self.Name)
+            if string.find(name, "tp") or string.find(name, "teleport") or string.find(name, "position") or string.find(name, "check") or string.find(name, "anticheat") then
+                AddLog("Заблокирован: " .. self:GetFullName(), true)
+                return nil
+            end
+        end
+        
+        return oldNamecall(self, ...)
+    end)
+    
+    setreadonly(mt, true)
+    AddLog("Remote Blocker ВКЛ")
+end
+
+BlockRemoteBtn.MouseButton1Click:Connect(function()
+    local state = not BlockRemoteInd:GetAttribute("state")
+    BlockRemoteInd:SetAttribute("state", state)
+    
+    if state then
+        TweenService:Create(BlockRemoteInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 0, 100)}):Play()
+        enableRemoteBlock()
+    else
+        TweenService:Create(BlockRemoteInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+        AddLog("Remote Blocker ВЫКЛ. Перезайди в игру для сброса.")
+    end
+end)
+
+-- ========== 12. ОТКРЫТЬ СУНДУК ==========
+ForceChestBtn.MouseButton1Click:Connect(function()
+    AddLog("=== ПОИСК И ОТКРЫТИЕ DIAMOND CHEST ===")
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if isDiamondChest(obj) then
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt") 
+                          or (obj.Parent and obj.Parent:FindFirstChildOfClass("ProximityPrompt"))
+            if prompt then
+                count = count + 1
+                AddLog("Найден prompt: " .. prompt:GetFullName())
+                pcall(function()
+                    fireproximityprompt(prompt)
+                end)
+                AddLog("fireproximityprompt вызван!")
+            end
+        end
+    end
+    
+    if count == 0 then
+        AddLog("Diamond Chest с ProximityPrompt не найден!", true)
+    else
+        AddLog("Открыто сундуков: " .. count)
+    end
+    
+    TweenService:Create(ForceChestInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
+    task.wait(1)
+    TweenService:Create(ForceChestInd, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 45, 45)}):Play()
+end)
+
+AddLog("GhostWare v3.6 загружен!")
+AddLog("10. Скан Remotes (R)")
+AddLog("11. Блок Remote (K)")
+AddLog("12. Открыть сундук (O)")
