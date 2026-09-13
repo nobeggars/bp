@@ -1,9 +1,16 @@
 --[[
-    NEON v3.1 — STRONGHOLD FIX + CHUNK LOADER
+    NEON v3.2 — STRONGHOLD BUILDING TP
     Author: I.S.-1
-    Fixes:
-    - TP to Stronghold: search for DiamondChest/ChestDEF/StrongholdChest in Campground AND Workspace
-    - Chunk Loader: RequestStreamAroundAsync + teleport to Campground first
+    Features:
+    - Fly (F)
+    - Noclip (G)
+    - ESP (H)
+    - Anti-TP (B)
+    - Night Vision (N)
+    - Clean World (R)
+    - Load Chunks (C)
+    - TP to Chest (T)
+    - TP to Stronghold Building (Y)  <-- ИСПРАВЛЕНО
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -32,7 +39,8 @@ local CONFIG = {
     NIGHT_VISION_COLOR = Color3.fromRGB(0, 255, 200),
     TREE_KEYWORDS = {"tree", "pine", "oak", "birch", "spruce", "forest"},
     GRASS_KEYWORDS = {"grass", "bush", "flower", "plant", "shrub"},
-    STRONGHOLD_KEYWORDS = {"chestdef", "diamondchest", "strongholdchest", "stronghold"},
+    -- Ключевые слова для поиска Стронгхолда (здания)
+    STRONGHOLD_BUILDING_KEYWORDS = {"stronghold", "fortress", "castle", "strongholdbuilding", "stronghold_building"},
 }
 
 -- ========== STATE ==========
@@ -72,7 +80,7 @@ MainStroke.Transparency = 0.3
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-Title.Text = "★ NEON v3.1 STRONGHOLD FIX ★"
+Title.Text = "★ NEON v3.2 STRONGHOLD TP ★"
 Title.TextColor3 = Color3.fromRGB(0, 255, 200)
 Title.Font = Enum.Font.GothamBlack
 Title.TextSize = 11
@@ -278,20 +286,18 @@ local function setWorldClean(state)
     end
 end
 
--- ========== CHUNK LOADER (FIXED) ==========
+-- ========== CHUNK LOADER ==========
 local function loadAllChunks()
     print("[CHUNK] Loading chunks...")
     local hrp = getHRP()
     if not hrp then return end
     
-    -- 1. Пробуем RequestStreamAroundAsync
     pcall(function()
         if workspace.RequestStreamAroundAsync then
             workspace:RequestStreamAroundAsync(hrp.Position)
         end
     end)
     
-    -- 2. ТП в Campground для прогрузки
     local cg = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Campground")
     if cg then
         local pos = cg:GetPivot().Position
@@ -299,7 +305,6 @@ local function loadAllChunks()
         task.wait(1)
     end
     
-    -- 3. Пролетаем по карте (телепорт в 4 угла)
     local map = workspace:FindFirstChild("Map")
     if map then
         local corners = {
@@ -319,7 +324,6 @@ local function loadAllChunks()
         end
     end
     
-    -- 4. Прогружаем все части
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.LocalTransparencyModifier = 0
@@ -379,11 +383,7 @@ local function updateESP()
     if items then
         for _, obj in ipairs(items:GetChildren()) do
             if obj.Name:lower():find("chest") then
-                if obj.Name:lower():find("def") or obj.Name:lower():find("strong") or obj.Name:lower():find("diamond") then
-                    createESP(obj, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD CHEST ★")
-                else
-                    createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name)
-                end
+                createESP(obj, CONFIG.ESP_CHEST_COLOR, obj.Name)
             elseif obj.Name:lower() == "log" then
                 createESP(obj, CONFIG.ESP_LOG_COLOR, "LOG")
             elseif obj:IsA("Model") or obj:IsA("BasePart") then
@@ -397,7 +397,15 @@ local function updateESP()
         for _, landmark in ipairs(map:GetDescendants()) do
             if landmark:IsA("Model") then
                 local n = landmark.Name:lower()
-                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") or n:find("stronghold") then
+                -- Стронгхолд — розовым
+                for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
+                    if n:find(kw) then
+                        createESP(landmark, CONFIG.ESP_STRONGHOLD_COLOR, "★ STRONGHOLD ★")
+                        break
+                    end
+                end
+                -- Остальные здания — синим
+                if n:find("hut") or n:find("cabin") or n:find("tower") or n:find("lodge") or n:find("shack") or n:find("house") or n:find("treehouse") or n:find("castle") or n:find("shed") or n:find("camp") or n:find("cellar") or n:find("jail") or n:find("smith") then
                     createESP(landmark, CONFIG.ESP_BUILDING_COLOR, landmark.Name)
                 end
             end
@@ -420,6 +428,51 @@ local function setESP(state)
     if state then updateESP() else clearESP() end
 end
 
+-- ========== FIND STRONGHOLD BUILDING ==========
+local function findStrongholdBuilding()
+    local found = {}
+    -- Ищем по всей карте
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local n = obj.Name:lower()
+            for _, kw in ipairs(CONFIG.STRONGHOLD_BUILDING_KEYWORDS) do
+                if n:find(kw) then
+                    -- Исключаем кости, NPC, персонажей
+                    if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) 
+                       and not obj:IsA("Bone") 
+                       and not obj:IsA("Motor6D")
+                       and not obj:IsDescendantOf(LocalPlayer.Character or game) then
+                        table.insert(found, obj)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Если нашли несколько — возвращаем ближайший
+    if #found > 0 then
+        local hrp = getHRP()
+        if not hrp then return found[1] end
+        local nearest, dist = nil, math.huge
+        for _, obj in ipairs(found) do
+            local pos
+            if obj:IsA("Model") then
+                pos = obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position
+            elseif obj:IsA("BasePart") then
+                pos = obj.Position
+            end
+            if pos then
+                local d = (pos - hrp.Position).Magnitude
+                if d < dist then dist = d nearest = obj end
+            end
+        end
+        return nearest
+    end
+    
+    return nil
+end
+
 -- ========== TELEPORT ==========
 local function findNearestChest()
     local items = workspace:FindFirstChild("Items")
@@ -437,31 +490,6 @@ local function findNearestChest()
         end
     end
     return nearest
-end
-
--- ========== FIND STRONGHOLD CHEST (FIXED) ==========
-local function findStrongholdChest()
-    -- Ищем по всей карте, исключая кости и NPC
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        local n = obj.Name:lower()
-        -- Исключаем кости (Bone), NPC и части тела
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            if not obj:IsA("Bone") and not obj:IsA("Motor6D") then
-                for _, kw in ipairs(CONFIG.STRONGHOLD_KEYWORDS) do
-                    if n == kw or n:find(kw) then
-                        -- Проверяем, что это не часть персонажа
-                        if not obj:IsDescendantOf(workspace:FindFirstChild("Characters") or game) then
-                            -- Проверяем, что это не кость
-                            if not obj.Parent or obj.Parent.Name ~= "Characters" then
-                                return obj
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil
 end
 
 local function teleportTo(target)
@@ -494,8 +522,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         local chest = findNearestChest()
         if chest then teleportTo(chest) end
     elseif input.KeyCode == Enum.KeyCode.Y then
-        local strong = findStrongholdChest()
-        if strong then teleportTo(strong) end
+        local strong = findStrongholdBuilding()
+        if strong then
+            teleportTo(strong)
+            print("[STRONGHOLD] TP to: " .. strong:GetFullName())
+        else
+            print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+        end
     end
 end)
 
@@ -511,9 +544,13 @@ TpChestBtn.MouseButton1Click:Connect(function()
     if chest then teleportTo(chest) end
 end)
 TpStrongBtn.MouseButton1Click:Connect(function()
-    local strong = findStrongholdChest()
-    if strong then teleportTo(strong)
-    else print("[STRONGHOLD] ChestDEF not found! Maybe Stronghold not open.") end
+    local strong = findStrongholdBuilding()
+    if strong then
+        teleportTo(strong)
+        print("[STRONGHOLD] TP to: " .. strong:GetFullName())
+    else
+        print("[STRONGHOLD] Building not found! Try Load Chunks (C) first.")
+    end
 end)
 ChunkBtn.MouseButton1Click:Connect(function()
     loadAllChunks()
@@ -538,4 +575,4 @@ TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingD
     Position = UDim2.new(0.5, -140, 0.15, 0)
 }):Play()
 
-print("[NEON] v3.1 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, T=chest, Y=stronghold")
+print("[NEON] v3.2 loaded. Keys: F=fly, G=noclip, H=esp, B=anti-tp, N=night, R=clean, C=chunks, T=chest, Y=stronghold")
