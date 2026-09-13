@@ -1,9 +1,10 @@
 --[[
-    GHOSTWARE v4.3 — FIXED CLIPBOARD + SMART DEBUG
+    GHOSTWARE v4.4 — FIXED FARM EDITION
     Author: I.S.-1
     Fixes:
-    - Clipboard crash: копирует только последние 50 строк
-    - Debug: показывает только уникальные имена (дрова, костёр, NPC)
+    - AUTO-UPGRADE: ищет ТОЛЬКО "Log" и "MainFire"
+    - KILL AURA: бьёт ТОЛЬКО "Cultist" и "Crossbow Cultist"
+    - Clipboard safe (50 строк)
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -46,7 +47,7 @@ local savedCF = nil
 local autoUpgradeConnection = nil
 local killAuraConnection = nil
 local isCollapsed = false
-local logLines = {} -- массив строк лога
+local logLines = {}
 
 -- ========== CLEANUP ==========
 pcall(function() if CoreGui:FindFirstChild(uiName) then CoreGui[uiName]:Destroy() end end)
@@ -74,7 +75,6 @@ local UIStroke = Instance.new("UIStroke", Main)
 UIStroke.Thickness = 1
 UIStroke.Color = Color3.fromRGB(30, 45, 40)
 
--- ========== TITLE BAR ==========
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 32)
 TitleBar.BackgroundColor3 = Color3.fromRGB(18, 22, 22)
@@ -85,7 +85,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.3"
+TitleLabel.Text = "★ GHOSTWARE v4.4"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -117,7 +117,6 @@ CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = TitleBar
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 5)
 
--- ========== TABS BAR ==========
 local TabsBar = Instance.new("Frame")
 TabsBar.Size = UDim2.new(1, -20, 0, 26)
 TabsBar.Position = UDim2.new(0, 10, 0, 38)
@@ -131,7 +130,6 @@ TabsLayout.FillDirection = Enum.FillDirection.Horizontal
 TabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabsLayout.Padding = UDim.new(0, 4)
 
--- ========== CONTENT AREA ==========
 local ContentArea = Instance.new("Frame")
 ContentArea.Size = UDim2.new(1, -20, 1, -130)
 ContentArea.Position = UDim2.new(0, 10, 0, 70)
@@ -140,7 +138,6 @@ ContentArea.BorderSizePixel = 0
 ContentArea.Parent = Main
 Instance.new("UICorner", ContentArea).CornerRadius = UDim.new(0, 6)
 
--- ========== LOG AREA ==========
 local LogFrame = Instance.new("Frame")
 LogFrame.Size = UDim2.new(1, -20, 0, 50)
 LogFrame.Position = UDim2.new(0, 10, 1, -60)
@@ -169,7 +166,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.3] Загружен.\n"
+LogText.Text = "[v4.4] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -177,12 +174,8 @@ local function AddLog(msg, isErr)
     local line = string.format("%s[%s] %s</font>\n", color, os.date("%X"), msg)
     LogText.Text = line .. LogText.Text
     LogScroll.CanvasSize = UDim2.new(0, 0, 0, LogText.AbsoluteSize.Y + 10)
-    
-    -- Храним только последние 50 строк
     table.insert(logLines, line)
-    if #logLines > 50 then
-        table.remove(logLines, 1)
-    end
+    if #logLines > 50 then table.remove(logLines, 1) end
 end
 
 -- ========== TAB SYSTEM ==========
@@ -200,11 +193,9 @@ local function CreateTabContent(tabName)
     frame.CanvasSize = UDim2.new(0, 0, 0, 0)
     frame.Visible = false
     frame.Parent = ContentArea
-    
     local layout = Instance.new("UIListLayout", frame)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 4)
-    
     tabContents[tabName] = frame
     return frame
 end
@@ -220,11 +211,8 @@ local function CreateTabButton(tabName)
     btn.AutoButtonColor = false
     btn.Parent = TabsBar
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
-    
     btn.MouseButton1Click:Connect(function()
-        for name, frame in pairs(tabContents) do
-            frame.Visible = (name == tabName)
-        end
+        for name, frame in pairs(tabContents) do frame.Visible = (name == tabName) end
         for name, button in pairs(tabButtons) do
             if name == tabName then
                 button.BackgroundColor3 = Color3.fromRGB(0, 80, 60)
@@ -235,7 +223,6 @@ local function CreateTabButton(tabName)
             end
         end
     end)
-    
     tabButtons[tabName] = btn
     return btn
 end
@@ -252,7 +239,6 @@ local function CreateToggle(parent, text, callback)
     btn.AutoButtonColor = false
     btn.Parent = parent
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
-    
     local Ind = Instance.new("Frame")
     Ind.Size = UDim2.new(0, 3, 0, 12)
     Ind.Position = UDim2.new(0, 3, 0.5, -6)
@@ -260,15 +246,12 @@ local function CreateToggle(parent, text, callback)
     Ind.BorderSizePixel = 0
     Ind.Parent = btn
     Instance.new("UICorner", Ind).CornerRadius = UDim.new(1, 0)
-    
     btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 30, 30)}):Play() end)
     btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(18, 22, 22)}):Play() end)
     btn.MouseButton1Click:Connect(callback)
-    
     return btn, Ind
 end
 
--- ========== CREATE TABS ==========
 CreateTabButton("MAIN")
 CreateTabButton("VISUAL")
 CreateTabButton("SCAN")
@@ -329,7 +312,6 @@ local visualTab = tabContents["VISUAL"]
 CreateToggle(visualTab, "1. ESP (Diamond Chest)", function()
     espEnabled = not espEnabled
     AddLog("ESP: " .. (espEnabled and "ВКЛ" or "ВЫКЛ"))
-    
     local function isTargetChest(obj)
         local name = string.lower(obj.Name)
         if string.find(name, "diamond") and string.find(name, "chest") then return true, "💎 DIAMOND CHEST", Color3.fromRGB(0, 240, 255) end
@@ -342,7 +324,6 @@ CreateToggle(visualTab, "1. ESP (Diamond Chest)", function()
         end
         return false
     end
-    
     local function createESP(object, color, text)
         if highlightObjects[object] then return end
         pcall(function()
@@ -378,7 +359,6 @@ CreateToggle(visualTab, "1. ESP (Diamond Chest)", function()
         end)
         if string.find(text, "CHEST") then foundObject = object end
     end
-    
     if espEnabled then
         for _, obj in pairs(workspace:GetDescendants()) do
             local isT, lbl, clr = isTargetChest(obj)
@@ -400,7 +380,6 @@ end)
 CreateToggle(visualTab, "2. NIGHT VISION", function()
     nightVisionEnabled = not nightVisionEnabled
     AddLog("Night Vision: " .. (nightVisionEnabled and "ВКЛ" or "ВЫКЛ"))
-    
     if nightVisionEnabled then
         originalLighting = {
             Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -445,11 +424,7 @@ end)
 local scanTab = tabContents["SCAN"]
 
 CreateToggle(scanTab, "1. SPIRAL SCAN", function()
-    if scanEnabled then
-        scanEnabled = false
-        AddLog("Скан остановлен")
-        return
-    end
+    if scanEnabled then scanEnabled = false AddLog("Скан остановлен") return end
     local hrp = getHRP()
     if not hrp then AddLog("HRP не найден", true) return end
     scanEnabled = true
@@ -525,71 +500,130 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
+-- ========== AUTO-UPGRADE (ИСПРАВЛЕННЫЙ) ==========
 CreateToggle(farmTab, "1. AUTO-UPGRADE КОСТРА", function()
     autoUpgradeEnabled = not autoUpgradeEnabled
     AddLog("Auto-Upgrade: " .. (autoUpgradeEnabled and "ВКЛ" or "ВЫКЛ"))
+    
     if autoUpgradeEnabled then
         task.spawn(function()
             while autoUpgradeEnabled do
                 task.wait(0.5)
                 local hrp = getHRP()
                 if not hrp then continue end
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if not autoUpgradeEnabled then break end
-                    local n = string.lower(obj.Name)
-                    if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch")) and not string.find(n, "stack") then
-                        if obj:IsA("BasePart") or obj:IsA("Model") then
-                            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
-                            if pos then
-                                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                                task.wait(0.15)
-                                local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-                                if prompt then pcall(function() fireproximityprompt(prompt) end)
-                                elseif obj:IsA("BasePart") then pcall(function() firetouchinterest(hrp, obj, 0) task.wait(0.05) firetouchinterest(hrp, obj, 1) end) end
-                                task.wait(0.15)
-                            end
+                
+                -- ===== СОБИРАЕМ ТОЛЬКО LOG =====
+                local logs = {}
+                local items = workspace:FindFirstChild("Items")
+                if items then
+                    for _, obj in ipairs(items:GetChildren()) do
+                        if obj.Name == "Log" then
+                            table.insert(logs, obj)
                         end
                     end
                 end
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if not autoUpgradeEnabled then break end
-                    local n = string.lower(obj.Name)
-                    if string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit") then
-                        if not string.find(n, "light") and not string.find(n, "particle") then
-                            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
-                            if pos then
-                                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                                task.wait(0.3)
-                                local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
-                                if prompt then pcall(function() fireproximityprompt(prompt) end) end
+                
+                if #logs > 0 then
+                    AddLog("Найдено Log: " .. #logs)
+                    for i, logObj in ipairs(logs) do
+                        if not autoUpgradeEnabled then break end
+                        if i > 15 then break end
+                        
+                        local pos
+                        if logObj:IsA("Model") then
+                            pos = logObj.PrimaryPart and logObj.PrimaryPart.Position or logObj:GetPivot().Position
+                        else
+                            pos = logObj.Position
+                        end
+                        
+                        if pos then
+                            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                            task.wait(0.15)
+                            
+                            local prompt = logObj:FindFirstChildOfClass("ProximityPrompt", true)
+                            if prompt then
+                                pcall(function() fireproximityprompt(prompt) end)
+                            elseif logObj:IsA("BasePart") then
+                                pcall(function()
+                                    firetouchinterest(hrp, logObj, 0)
+                                    task.wait(0.05)
+                                    firetouchinterest(hrp, logObj, 1)
+                                end)
                             end
+                            task.wait(0.15)
                         end
                     end
+                end
+                
+                -- ===== ТП К MAIN FIRE =====
+                local mainFire = nil
+                local map = workspace:FindFirstChild("Map")
+                if map then
+                    local cg = map:FindFirstChild("Campground")
+                    if cg then
+                        mainFire = cg:FindFirstChild("MainFire")
+                    end
+                end
+                
+                if mainFire then
+                    local pos
+                    if mainFire:IsA("Model") then
+                        pos = mainFire.PrimaryPart and mainFire.PrimaryPart.Position or mainFire:GetPivot().Position
+                    else
+                        pos = mainFire.Position
+                    end
+                    
+                    if pos then
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                        task.wait(0.3)
+                        
+                        local prompt = mainFire:FindFirstChildOfClass("ProximityPrompt", true)
+                        if prompt then
+                            pcall(function() fireproximityprompt(prompt) end)
+                            AddLog("Костёр разожжён!")
+                        end
+                    end
+                else
+                    AddLog("MainFire не найден", true)
                 end
             end
         end)
     end
 end)
 
-CreateToggle(farmTab, "2. KILL AURA", function()
+-- ========== KILL AURA (ИСПРАВЛЕННЫЙ) ==========
+CreateToggle(farmTab, "2. KILL AURA (CULTISTS)", function()
     killAuraEnabled = not killAuraEnabled
     AddLog("Kill Aura: " .. (killAuraEnabled and "ВКЛ" or "ВЫКЛ"))
+    
     if killAuraEnabled then
         killAuraConnection = RunService.Heartbeat:Connect(function()
             if not killAuraEnabled then return end
             local hrp = getHRP()
             if not hrp then return end
+            
             local chars = workspace:FindFirstChild("Characters")
             if not chars then return end
+            
             for _, npc in ipairs(chars:GetChildren()) do
                 if npc:IsA("Model") then
-                    local hum = npc:FindFirstChildOfClass("Humanoid")
-                    local npcHRP = npc:FindFirstChild("HumanoidRootPart")
-                    if hum and hum.Health > 0 and npcHRP then
-                        if (npcHRP.Position - hrp.Position).Magnitude < 100 then
-                            local char = LocalPlayer.Character
-                            local tool = char and char:FindFirstChildOfClass("Tool")
-                            if tool then pcall(function() tool:Activate() end) end
+                    local name = string.lower(npc.Name)
+                    -- АТАКУЕМ ТОЛЬКО КУЛЬТИСТОВ!
+                    if string.find(name, "cultist") then
+                        local hum = npc:FindFirstChildOfClass("Humanoid")
+                        local npcHRP = npc:FindFirstChild("HumanoidRootPart")
+                        
+                        if hum and hum.Health > 0 and npcHRP then
+                            local dist = (npcHRP.Position - hrp.Position).Magnitude
+                            if dist < 100 then
+                                hrp.CFrame = CFrame.new(npcHRP.Position + Vector3.new(0, 3, 0))
+                                
+                                local char = LocalPlayer.Character
+                                local tool = char and char:FindFirstChildOfClass("Tool")
+                                if tool then
+                                    pcall(function() tool:Activate() end)
+                                end
+                            end
                         end
                     end
                 end
@@ -603,13 +637,9 @@ end)
 -- ========== DEBUG TAB ==========
 local debugTab = tabContents["DEBUG"]
 
--- УМНЫЙ DEBUG — только уникальные имена
-CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА (ДРОВА/КОСТЁР/NPC)", function()
+CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
     AddLog("=== УНИКАЛЬНЫЕ ИМЕНА ===")
-    
-    local woodNames = {}
-    local fireNames = {}
-    local npcNames = {}
+    local woodNames, fireNames, npcNames = {}, {}, {}
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         local n = string.lower(obj.Name)
@@ -631,20 +661,11 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА (ДРОВА/КОСТЁР/
     end
     
     AddLog("--- ДРОВА ---")
-    for name, count in pairs(woodNames) do
-        AddLog("  " .. name .. " (x" .. count .. ")")
-    end
-    
+    for name, count in pairs(woodNames) do AddLog("  " .. name .. " (x" .. count .. ")") end
     AddLog("--- КОСТЁР ---")
-    for name, count in pairs(fireNames) do
-        AddLog("  " .. name .. " (x" .. count .. ")")
-    end
-    
+    for name, count in pairs(fireNames) do AddLog("  " .. name .. " (x" .. count .. ")") end
     AddLog("--- NPC ---")
-    for name, count in pairs(npcNames) do
-        AddLog("  " .. name .. " (x" .. count .. ")")
-    end
-    
+    for name, count in pairs(npcNames) do AddLog("  " .. name .. " (x" .. count .. ")") end
     AddLog("=== КОНЕЦ ===")
 end)
 
@@ -674,25 +695,19 @@ CreateToggle(debugTab, "3. СКАН REMOTES", function()
     end
 end)
 
--- ИСПРАВЛЕННОЕ КОПИРОВАНИЕ (только последние 50 строк)
 CreateToggle(debugTab, "4. КОПИРОВАТЬ ЛОГ (безопасно)", function()
     AddLog("Копирую последние 50 строк...")
     local toCopy = ""
     for i = math.max(1, #logLines - 50), #logLines do
         toCopy = toCopy .. logLines[i]
     end
-    
     local success = false
     pcall(function()
         if setclipboard then setclipboard(toCopy) success = true
         elseif toclipboard then toclipboard(toCopy) success = true end
     end)
-    
-    if success then
-        AddLog("Скопировано " .. math.min(50, #logLines) .. " строк!")
-    else
-        AddLog("setclipboard не работает", true)
-    end
+    if success then AddLog("Скопировано!")
+    else AddLog("setclipboard не работает", true) end
 end)
 
 -- ========== COLLAPSE / CLOSE ==========
@@ -752,5 +767,5 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v4.3 FIXED загружен!")
-AddLog("DEBUG → '1. ПОКАЗАТЬ ИМЕНА'")
+AddLog("v4.4 FIXED загружен!")
+AddLog("Farm → Auto-Upgrade + Kill Aura")
