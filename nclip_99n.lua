@@ -1,9 +1,10 @@
 --[[
-    GHOSTWARE v5.1 — FORCE PROXIMITY ENGINE + FULL FEATURES
-    Author: I.S.-1 + Gemini Fix
+    GHOSTWARE v5.2 — ULTIMATE FULL EDITION
+    Author: I.S.-1
     Fixes:
-    - Force Interact: InputHoldBegin/InputHoldEnd + Camera Focus + +2.5 Studs
-    - ALL previous functions: Fly, Noclip, Anti-TP, God Mode, ESP, Night Vision, Spiral Scan, Kill Aura, Debug
+    - Force Interact: InputHoldBegin/End + Camera Focus + +2.5 Studs
+    - ВАЖНО: Auto-Farm работает ТОЛЬКО с включённым FLY + NOCLIP
+    - ALL functions: Fly, Noclip, Anti-TP, God Mode, ESP, Night Vision, Spiral Scan, Kill Aura, Debug
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -64,7 +65,7 @@ if not parentSet then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") e
 
 -- ========== UI ==========
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 380, 0, 340)
+Main.Size = UDim2.new(0, 380, 0, 360)
 Main.Position = UDim2.new(0.5, -190, 0.15, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
@@ -86,7 +87,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v5.1"
+TitleLabel.Text = "★ GHOSTWARE v5.2"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -132,7 +133,7 @@ TabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabsLayout.Padding = UDim.new(0, 4)
 
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -20, 1, -140)
+ContentArea.Size = UDim2.new(1, -20, 1, -150)
 ContentArea.Position = UDim2.new(0, 10, 0, 70)
 ContentArea.BackgroundColor3 = Color3.fromRGB(10, 12, 12)
 ContentArea.BorderSizePixel = 0
@@ -167,7 +168,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v5.1] Force Engine загружен.\n"
+LogText.Text = "[v5.2] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -270,9 +271,9 @@ local function getHRP()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- ========== FORCE INTERACT (InputHoldBegin/End + Camera) ==========
+-- ========== FORCE INTERACT ==========
 local function forceInteract(prompt)
-    if not prompt then return false end
+    if not prompt or not prompt:IsA("ProximityPrompt") then return false end
     local success = false
     pcall(function()
         prompt:InputHoldBegin()
@@ -557,12 +558,16 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-FARM (FORCE INTERACT) ==========
+-- ========== AUTO-FARM (ТРЕБУЕТ FLY + NOCLIP) ==========
 CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     autoFarmEnabled = not autoFarmEnabled
     AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
     
     if autoFarmEnabled then
+        if not flyEnabled then
+            AddLog("ВНИМАНИЕ: Включи FLY & NOCLIP для работы!", true)
+        end
+        
         task.spawn(function()
             while autoFarmEnabled do
                 task.wait(0.5)
@@ -764,7 +769,7 @@ MinimizeBtn.MouseButton1Click:Connect(function()
         ContentArea.Visible = false
         LogFrame.Visible = false
     else
-        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 340)}):Play()
+        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 360)}):Play()
         TabsBar.Visible = true
         ContentArea.Visible = true
         LogFrame.Visible = true
@@ -812,5 +817,5 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v5.1 FORCE PROXIMITY ENGINE загружен!")
-AddLog("FARM → Force Interact (InputHoldBegin/End)")
+AddLog("v5.2 ULTIMATE FULL загружен!")
+AddLog("ВАЖНО: Для Auto-Farm включи FLY & NOCLIP!")
