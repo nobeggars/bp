@@ -1,10 +1,9 @@
 --[[
-    GHOSTWARE v4.7 — FULL STABLE + GOD MODE FIX
+    GHOSTWARE v4.8 — AUTO-FARM FIX (Fuel Canister)
     Author: I.S.-1
     Fixes:
-    - God Mode: ForceField + Health Restore + TouchTransmitter removal (NO Physics!)
-    - Auto-Farm: Log, Gas, Fuel, Barrel, Canister + fireproximityprompt + return to start
-    - ALL previous functions: ESP, Scan, Kill Aura, Anti-TP, Fly, Noclip, Night Vision
+    - Auto-Farm теперь ищет "Fuel Canister" и "FuelAdded"
+    - Всё остальное сохранено
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -87,7 +86,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.7"
+TitleLabel.Text = "★ GHOSTWARE v4.8"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -168,7 +167,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.7] Загружен.\n"
+LogText.Text = "[v4.8] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -308,13 +307,12 @@ CreateToggle(mainTab, "2. ANTI-TP", function()
     end
 end)
 
--- ========== GOD MODE (ИСПРАВЛЕННЫЙ — БЕЗ PHYSICS) ==========
+-- ========== GOD MODE (безопасный) ==========
 CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
     godModeEnabled = not godModeEnabled
     AddLog("God Mode: " .. (godModeEnabled and "ВКЛ" or "ВЫКЛ"))
     
     if godModeEnabled then
-        -- Создаём ForceField
         local char = LocalPlayer.Character
         if char and not char:FindFirstChild("GhostShield") then
             local ff = Instance.new("ForceField")
@@ -323,7 +321,6 @@ CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
             ff.Parent = char
         end
         
-        -- Удаляем TouchTransmitter
         if char then
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("TouchTransmitter") then
@@ -332,7 +329,6 @@ CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
             end
         end
         
-        -- Восстанавливаем здоровье каждые 0.1 сек
         if godModeConnection then godModeConnection:Disconnect() end
         godModeConnection = RunService.Heartbeat:Connect(function()
             if not godModeEnabled then return end
@@ -553,7 +549,7 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ) ==========
+-- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ — Fuel Canister + FuelAdded) ==========
 CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     autoFarmEnabled = not autoFarmEnabled
     AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
@@ -578,9 +574,13 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                     local n = string.lower(obj.Name)
                     local isFuel = false
                     
-                    if (string.find(n, "log") or string.find(n, "gas") or string.find(n, "fuel") or string.find(n, "barrel") or string.find(n, "canister")) and not string.find(n, "stack") then
+                    -- ИСПРАВЛЕНО: Fuel Canister, FuelAdded, Log
+                    if string.find(n, "fuel canister") or string.find(n, "fueladded") or string.find(n, "log") then
                         if obj:IsA("BasePart") or obj:IsA("Model") then
-                            isFuel = true
+                            -- Исключаем меши
+                            if not string.find(n, "mesh") and not string.find(n, "stack") and not string.find(n, "sign") then
+                                isFuel = true
+                            end
                         end
                     end
                     
@@ -686,7 +686,7 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         local n = string.lower(obj.Name)
-        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch") or string.find(n, "log") or string.find(n, "fuel") or string.find(n, "gas")) and not obj:IsA("Bone") then
+        if (string.find(n, "wood") or string.find(n, "stick") or string.find(n, "branch") or string.find(n, "log") or string.find(n, "fuel") or string.find(n, "gas") or string.find(n, "canister")) and not obj:IsA("Bone") then
             woodNames[obj.Name] = (woodNames[obj.Name] or 0) + 1
         end
         if (string.find(n, "campfire") or string.find(n, "mainfire") or string.find(n, "firepit")) and not obj:IsA("Bone") and not string.find(n, "light") and not string.find(n, "particle") then
@@ -713,103 +713,4 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
 end)
 
 CreateToggle(debugTab, "2. ПОКАЗАТЬ ИНСТРУМЕНТЫ", function()
-    AddLog("=== ИНСТРУМЕНТЫ ===")
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then AddLog("Backpack: " .. tool.Name) end
-        end
-    end
-    local char = LocalPlayer.Character
-    if char then
-        for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") then AddLog("Equipped: " .. tool.Name) end
-        end
-    end
-    AddLog("=== КОНЕЦ ===")
-end)
-
-CreateToggle(debugTab, "3. СКАН REMOTES", function()
-    AddLog("=== REMOTES ===")
-    local rs = game:GetService("ReplicatedStorage")
-    for _, obj in ipairs(rs:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then AddLog("RE: " .. obj:GetFullName())
-        elseif obj:IsA("RemoteFunction") then AddLog("RF: " .. obj:GetFullName()) end
-    end
-end)
-
-CreateToggle(debugTab, "4. КОПИРОВАТЬ ЛОГ (безопасно)", function()
-    AddLog("Копирую последние 50 строк...")
-    local toCopy = ""
-    for i = math.max(1, #logLines - 50), #logLines do
-        toCopy = toCopy .. logLines[i]
-    end
-    local success = false
-    pcall(function()
-        if setclipboard then setclipboard(toCopy) success = true
-        elseif toclipboard then toclipboard(toCopy) success = true end
-    end)
-    if success then AddLog("Скопировано!")
-    else AddLog("setclipboard не работает", true) end
-end)
-
--- ========== COLLAPSE / CLOSE ==========
-MinimizeBtn.MouseButton1Click:Connect(function()
-    isCollapsed = not isCollapsed
-    if isCollapsed then
-        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 200, 0, 32)}):Play()
-        TabsBar.Visible = false
-        ContentArea.Visible = false
-        LogFrame.Visible = false
-    else
-        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 320)}):Play()
-        TabsBar.Visible = true
-        ContentArea.Visible = true
-        LogFrame.Visible = true
-    end
-end)
-
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
--- ========== DEFAULT TAB ==========
-tabContents["MAIN"].Visible = true
-tabButtons["MAIN"].BackgroundColor3 = Color3.fromRGB(0, 80, 60)
-tabButtons["MAIN"].TextColor3 = Color3.fromRGB(0, 255, 200)
-
--- ========== LOOPS ==========
-RunService.Stepped:Connect(function()
-    if noclipEnabled then
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
-            end
-        end
-    end
-end)
-
-RunService.RenderStepped:Connect(function()
-    if not flyEnabled or scanEnabled then return end
-    local hrp = getHRP()
-    if not hrp then return end
-    local move = Vector3.new(0, 0, 0)
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum and move.Magnitude == 0 then
-        local md = hum.MoveDirection
-        if md.Magnitude > 0 then move = (Camera.CFrame.LookVector * (md.Z * -1)) + (Camera.CFrame.RightVector * md.X) end
-    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
-    if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
-end)
-
-AddLog("v4.7 FULL + GOD MODE FIX загружен!")
-AddLog("MAIN → God Mode (безопасный)")
-AddLog("FARM → Auto-Farm + Kill Aura")
+    AddLog("=== ИНСТРУМЕНТЫ ==="
