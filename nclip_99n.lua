@@ -1,8 +1,8 @@
 --[[
-    GHOSTWARE v5.0 — FULL + FIXED AUTO-FARM
-    Author: I.S.-1
+    GHOSTWARE v5.1 — FORCE PROXIMITY ENGINE + FULL FEATURES
+    Author: I.S.-1 + Gemini Fix
     Fixes:
-    - Auto-Farm: тайминги 0.4, точные имена Fuel Canister/FuelAdded/Log
+    - Force Interact: InputHoldBegin/InputHoldEnd + Camera Focus + +2.5 Studs
     - ALL previous functions: Fly, Noclip, Anti-TP, God Mode, ESP, Night Vision, Spiral Scan, Kill Aura, Debug
 --]]
 
@@ -86,7 +86,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v5.0"
+TitleLabel.Text = "★ GHOSTWARE v5.1"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -167,7 +167,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v5.0] Загружен.\n"
+LogText.Text = "[v5.1] Force Engine загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -268,6 +268,19 @@ CreateTabContent("DEBUG")
 local function getHRP()
     local char = LocalPlayer.Character
     return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- ========== FORCE INTERACT (InputHoldBegin/End + Camera) ==========
+local function forceInteract(prompt)
+    if not prompt then return false end
+    local success = false
+    pcall(function()
+        prompt:InputHoldBegin()
+        task.wait(math.max(prompt.HoldDuration, 0.05) + 0.05)
+        prompt:InputHoldEnd()
+        success = true
+    end)
+    return success
 end
 
 -- ========== MAIN TAB ==========
@@ -522,7 +535,7 @@ CreateToggle(scanTab, "3. FORCE OPEN CHEST", function()
         end
     end
     if not prompt then AddLog("Prompt не найден", true) return end
-    AddLog("CFrame Spoofing...")
+    AddLog("Force Interact...")
     local spoofActive = true
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, index)
@@ -532,9 +545,9 @@ CreateToggle(scanTab, "3. FORCE OPEN CHEST", function()
         return oldIndex(self, index)
     end)
     local oldCF = hrp.CFrame
-    hrp.CFrame = foundObject.CFrame + Vector3.new(0, 1, 0)
+    hrp.CFrame = foundObject.CFrame + Vector3.new(0, 2.5, 0)
     task.wait(0.1)
-    pcall(function() fireproximityprompt(prompt) end)
+    forceInteract(prompt)
     AddLog("Пакет отправлен!")
     task.wait(0.1)
     spoofActive = false
@@ -544,7 +557,7 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ — ТАЙМИНГИ 0.4) ==========
+-- ========== AUTO-FARM (FORCE INTERACT) ==========
 CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     autoFarmEnabled = not autoFarmEnabled
     AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
@@ -552,11 +565,10 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     if autoFarmEnabled then
         task.spawn(function()
             while autoFarmEnabled do
-                task.wait(0.4)
+                task.wait(0.5)
                 local hrp = getHRP()
                 if not hrp then continue end
                 
-                -- Ищем костёр
                 local campfire = workspace:FindFirstChild("MainFire", true)
                 if not campfire then
                     AddLog("MainFire не найден", true)
@@ -564,14 +576,16 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                     continue
                 end
                 
-                -- Ищем топливо (Fuel Canister, FuelAdded, Log, PileWood1)
                 local fuelObject = nil
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     local name = obj.Name
                     if name == "Fuel Canister" or name == "FuelAdded" or name == "Log" or name == "PileWood1" then
                         if obj:IsA("BasePart") or (obj:IsA("Model") and obj.PrimaryPart) then
-                            fuelObject = obj
-                            break
+                            local p = obj:FindFirstChildOfClass("ProximityPrompt", true) or (obj.Parent and obj.Parent:FindFirstChildOfClass("ProximityPrompt", true))
+                            if p then
+                                fuelObject = obj
+                                break
+                            end
                         end
                     end
                 end
@@ -585,21 +599,19 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                     end
                     
                     local originalCF = hrp.CFrame
-                    AddLog("Найдено топливо: " .. fuelObject.Name)
+                    AddLog("Сбор: " .. fuelObject.Name)
                     
-                    -- Летим к топливу
-                    hrp.CFrame = targetCF + Vector3.new(0, 2, 0)
-                    task.wait(0.4) -- ВАЖНО: тайминг для сервера
+                    hrp.CFrame = targetCF + Vector3.new(0, 2.5, 0)
+                    pcall(function() Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetCF.Position) end)
+                    task.wait(0.3)
                     
-                    -- Собираем
-                    local prompt = fuelObject:FindFirstChildOfClass("ProximityPrompt", true)
+                    local prompt = fuelObject:FindFirstChildOfClass("ProximityPrompt", true) or (fuelObject.Parent and fuelObject.Parent:FindFirstChildOfClass("ProximityPrompt", true))
                     if prompt then
-                        pcall(function() fireproximityprompt(prompt) end)
+                        forceInteract(prompt)
                         AddLog("Собрано: " .. fuelObject.Name)
                         task.wait(0.2)
                     end
                     
-                    -- Летим к костру
                     local fireCF
                     if campfire:IsA("Model") then
                         fireCF = campfire.PrimaryPart and campfire.PrimaryPart.CFrame or campfire:GetPivot()
@@ -607,18 +619,17 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                         fireCF = campfire.CFrame
                     end
                     
-                    hrp.CFrame = fireCF + Vector3.new(0, 2, 0)
-                    task.wait(0.4) -- ВАЖНО: тайминг
+                    hrp.CFrame = fireCF + Vector3.new(0, 3, 0)
+                    pcall(function() Camera.CFrame = CFrame.new(Camera.CFrame.Position, fireCF.Position) end)
+                    task.wait(0.4)
                     
-                    -- Сдаём в костёр
                     local campPrompt = campfire:FindFirstChildOfClass("ProximityPrompt", true)
                     if campPrompt then
-                        pcall(function() fireproximityprompt(campPrompt) end)
+                        forceInteract(campPrompt)
                         AddLog("Сдано в MainFire")
                         task.wait(0.2)
                     end
                     
-                    -- Возвращаемся
                     hrp.CFrame = originalCF
                     task.wait(0.1)
                 end
@@ -652,7 +663,6 @@ CreateToggle(farmTab, "2. KILL AURA (CULTISTS)", function()
                             local dist = (npcHRP.Position - hrp.Position).Magnitude
                             if dist < 100 then
                                 hrp.CFrame = CFrame.new(npcHRP.Position + Vector3.new(0, 3, 0))
-                                
                                 local char = LocalPlayer.Character
                                 local tool = char and char:FindFirstChildOfClass("Tool")
                                 if tool then
@@ -802,5 +812,5 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v5.0 FULL + FIXED AUTO-FARM загружен!")
-AddLog("FARM → Auto-Farm (тайминги 0.4)")
+AddLog("v5.1 FORCE PROXIMITY ENGINE загружен!")
+AddLog("FARM → Force Interact (InputHoldBegin/End)")
