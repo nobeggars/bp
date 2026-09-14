@@ -713,4 +713,102 @@ CreateToggle(debugTab, "1. ПОКАЗАТЬ ИМЕНА", function()
 end)
 
 CreateToggle(debugTab, "2. ПОКАЗАТЬ ИНСТРУМЕНТЫ", function()
-    AddLog("=== ИНСТРУМЕНТЫ ==="
+    AddLog("=== ИНСТРУМЕНТЫ ===")
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then AddLog("Backpack: " .. tool.Name) end
+        end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then AddLog("Equipped: " .. tool.Name) end
+        end
+    end
+    AddLog("=== КОНЕЦ ===")
+end)
+
+CreateToggle(debugTab, "3. СКАН REMOTES", function()
+    AddLog("=== REMOTES ===")
+    local rs = game:GetService("ReplicatedStorage")
+    for _, obj in ipairs(rs:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then AddLog("RE: " .. obj:GetFullName())
+        elseif obj:IsA("RemoteFunction") then AddLog("RF: " .. obj:GetFullName()) end
+    end
+end)
+
+CreateToggle(debugTab, "4. КОПИРОВАТЬ ЛОГ (безопасно)", function()
+    AddLog("Копирую последние 50 строк...")
+    local toCopy = ""
+    for i = math.max(1, #logLines - 50), #logLines do
+        toCopy = toCopy .. logLines[i]
+    end
+    local success = false
+    pcall(function()
+        if setclipboard then setclipboard(toCopy) success = true
+        elseif toclipboard then toclipboard(toCopy) success = true end
+    end)
+    if success then AddLog("Скопировано!")
+    else AddLog("setclipboard не работает", true) end
+end)
+
+-- ========== COLLAPSE / CLOSE ==========
+MinimizeBtn.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+    if isCollapsed then
+        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 200, 0, 32)}):Play()
+        TabsBar.Visible = false
+        ContentArea.Visible = false
+        LogFrame.Visible = false
+    else
+        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 320)}):Play()
+        TabsBar.Visible = true
+        ContentArea.Visible = true
+        LogFrame.Visible = true
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- ========== DEFAULT TAB ==========
+tabContents["MAIN"].Visible = true
+tabButtons["MAIN"].BackgroundColor3 = Color3.fromRGB(0, 80, 60)
+tabButtons["MAIN"].TextColor3 = Color3.fromRGB(0, 255, 200)
+
+-- ========== LOOPS ==========
+RunService.Stepped:Connect(function()
+    if noclipEnabled then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not flyEnabled or scanEnabled then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    local move = Vector3.new(0, 0, 0)
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and move.Magnitude == 0 then
+        local md = hum.MoveDirection
+        if md.Magnitude > 0 then move = (Camera.CFrame.LookVector * (md.Z * -1)) + (Camera.CFrame.RightVector * md.X) end
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+    if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
+end)
+
+AddLog("v4.8 AUTO-FARM FIX загружен!")
+AddLog("FARM → Fuel Canister + FuelAdded")
