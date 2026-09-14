@@ -1,9 +1,9 @@
 --[[
-    GHOSTWARE v4.8 — AUTO-FARM FIX (Fuel Canister)
+    GHOSTWARE v5.0 — FULL + FIXED AUTO-FARM
     Author: I.S.-1
     Fixes:
-    - Auto-Farm теперь ищет "Fuel Canister" и "FuelAdded"
-    - Всё остальное сохранено
+    - Auto-Farm: тайминги 0.4, точные имена Fuel Canister/FuelAdded/Log
+    - ALL previous functions: Fly, Noclip, Anti-TP, God Mode, ESP, Night Vision, Spiral Scan, Kill Aura, Debug
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -15,7 +15,7 @@ local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local Camera = workspace.CurrentCamera
 
-local uiName = "GhostWare_v4"
+local uiName = "GhostWare_v5"
 
 -- ========== НАСТРОЙКИ ==========
 local SCAN = {
@@ -64,7 +64,7 @@ if not parentSet then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") e
 
 -- ========== UI ==========
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 380, 0, 320)
+Main.Size = UDim2.new(0, 380, 0, 340)
 Main.Position = UDim2.new(0.5, -190, 0.15, 0)
 Main.BackgroundColor3 = Color3.fromRGB(12, 14, 15)
 Main.BorderSizePixel = 0
@@ -86,7 +86,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.8"
+TitleLabel.Text = "★ GHOSTWARE v5.0"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -132,7 +132,7 @@ TabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabsLayout.Padding = UDim.new(0, 4)
 
 local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -20, 1, -130)
+ContentArea.Size = UDim2.new(1, -20, 1, -140)
 ContentArea.Position = UDim2.new(0, 10, 0, 70)
 ContentArea.BackgroundColor3 = Color3.fromRGB(10, 12, 12)
 ContentArea.BorderSizePixel = 0
@@ -167,7 +167,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.8] Загружен.\n"
+LogText.Text = "[v5.0] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -307,8 +307,7 @@ CreateToggle(mainTab, "2. ANTI-TP", function()
     end
 end)
 
--- ========== GOD MODE (безопасный) ==========
-CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
+CreateToggle(mainTab, "3. GOD MODE", function()
     godModeEnabled = not godModeEnabled
     AddLog("God Mode: " .. (godModeEnabled and "ВКЛ" or "ВЫКЛ"))
     
@@ -320,7 +319,6 @@ CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
             ff.Visible = false
             ff.Parent = char
         end
-        
         if char then
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("TouchTransmitter") then
@@ -328,7 +326,6 @@ CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
                 end
             end
         end
-        
         if godModeConnection then godModeConnection:Disconnect() end
         godModeConnection = RunService.Heartbeat:Connect(function()
             if not godModeEnabled then return end
@@ -348,9 +345,7 @@ CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
         end)
     else
         local char = LocalPlayer.Character
-        if char and char:FindFirstChild("GhostShield") then
-            char.GhostShield:Destroy()
-        end
+        if char and char:FindFirstChild("GhostShield") then char.GhostShield:Destroy() end
         if godModeConnection then godModeConnection:Disconnect() godModeConnection = nil end
     end
 end)
@@ -549,7 +544,7 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ — Fuel Canister + FuelAdded) ==========
+-- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ — ТАЙМИНГИ 0.4) ==========
 CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     autoFarmEnabled = not autoFarmEnabled
     AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
@@ -557,78 +552,75 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     if autoFarmEnabled then
         task.spawn(function()
             while autoFarmEnabled do
-                task.wait(0.5)
+                task.wait(0.4)
                 local hrp = getHRP()
                 if not hrp then continue end
                 
-                local mainFire = workspace:FindFirstChild("MainFire", true)
-                if not mainFire then
+                -- Ищем костёр
+                local campfire = workspace:FindFirstChild("MainFire", true)
+                if not campfire then
                     AddLog("MainFire не найден", true)
                     task.wait(2)
                     continue
                 end
                 
+                -- Ищем топливо (Fuel Canister, FuelAdded, Log, PileWood1)
+                local fuelObject = nil
                 for _, obj in ipairs(workspace:GetDescendants()) do
-                    if not autoFarmEnabled then break end
-                    
-                    local n = string.lower(obj.Name)
-                    local isFuel = false
-                    
-                    -- ИСПРАВЛЕНО: Fuel Canister, FuelAdded, Log
-                    if string.find(n, "fuel canister") or string.find(n, "fueladded") or string.find(n, "log") then
-                        if obj:IsA("BasePart") or obj:IsA("Model") then
-                            -- Исключаем меши
-                            if not string.find(n, "mesh") and not string.find(n, "stack") and not string.find(n, "sign") then
-                                isFuel = true
-                            end
+                    local name = obj.Name
+                    if name == "Fuel Canister" or name == "FuelAdded" or name == "Log" or name == "PileWood1" then
+                        if obj:IsA("BasePart") or (obj:IsA("Model") and obj.PrimaryPart) then
+                            fuelObject = obj
+                            break
                         end
                     end
-                    
-                    if isFuel then
-                        local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true) 
-                                      or (obj.Parent and obj.Parent:FindFirstChildOfClass("ProximityPrompt", true))
-                        
-                        if prompt then
-                            local previousLocation = hrp.CFrame
-                            local pos
-                            if obj:IsA("Model") then
-                                pos = obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position
-                            else
-                                pos = obj.Position
-                            end
-                            
-                            if pos then
-                                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                                task.wait(0.15)
-                                pcall(function() fireproximityprompt(prompt) end)
-                                AddLog("Собран: " .. obj.Name)
-                                task.wait(0.15)
-                                
-                                -- ТП к костру
-                                local firePos
-                                if mainFire:IsA("Model") then
-                                    firePos = mainFire.PrimaryPart and mainFire.PrimaryPart.Position or mainFire:GetPivot().Position
-                                else
-                                    firePos = mainFire.Position
-                                end
-                                
-                                if firePos then
-                                    hrp.CFrame = CFrame.new(firePos + Vector3.new(0, 3, 0))
-                                    task.wait(0.15)
-                                    
-                                    local firePrompt = mainFire:FindFirstChildOfClass("ProximityPrompt", true)
-                                    if firePrompt then
-                                        pcall(function() fireproximityprompt(firePrompt) end)
-                                        AddLog("Сдан в костёр")
-                                    end
-                                    task.wait(0.15)
-                                end
-                                
-                                hrp.CFrame = previousLocation
-                                task.wait(0.1)
-                            end
-                        end
+                end
+                
+                if fuelObject then
+                    local targetCF
+                    if fuelObject:IsA("Model") then
+                        targetCF = fuelObject.PrimaryPart.CFrame
+                    else
+                        targetCF = fuelObject.CFrame
                     end
+                    
+                    local originalCF = hrp.CFrame
+                    AddLog("Найдено топливо: " .. fuelObject.Name)
+                    
+                    -- Летим к топливу
+                    hrp.CFrame = targetCF + Vector3.new(0, 2, 0)
+                    task.wait(0.4) -- ВАЖНО: тайминг для сервера
+                    
+                    -- Собираем
+                    local prompt = fuelObject:FindFirstChildOfClass("ProximityPrompt", true)
+                    if prompt then
+                        pcall(function() fireproximityprompt(prompt) end)
+                        AddLog("Собрано: " .. fuelObject.Name)
+                        task.wait(0.2)
+                    end
+                    
+                    -- Летим к костру
+                    local fireCF
+                    if campfire:IsA("Model") then
+                        fireCF = campfire.PrimaryPart and campfire.PrimaryPart.CFrame or campfire:GetPivot()
+                    else
+                        fireCF = campfire.CFrame
+                    end
+                    
+                    hrp.CFrame = fireCF + Vector3.new(0, 2, 0)
+                    task.wait(0.4) -- ВАЖНО: тайминг
+                    
+                    -- Сдаём в костёр
+                    local campPrompt = campfire:FindFirstChildOfClass("ProximityPrompt", true)
+                    if campPrompt then
+                        pcall(function() fireproximityprompt(campPrompt) end)
+                        AddLog("Сдано в MainFire")
+                        task.wait(0.2)
+                    end
+                    
+                    -- Возвращаемся
+                    hrp.CFrame = originalCF
+                    task.wait(0.1)
                 end
             end
         end)
@@ -762,7 +754,7 @@ MinimizeBtn.MouseButton1Click:Connect(function()
         ContentArea.Visible = false
         LogFrame.Visible = false
     else
-        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 320)}):Play()
+        TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 340)}):Play()
         TabsBar.Visible = true
         ContentArea.Visible = true
         LogFrame.Visible = true
@@ -810,5 +802,5 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v4.8 AUTO-FARM FIX загружен!")
-AddLog("FARM → Fuel Canister + FuelAdded")
+AddLog("v5.0 FULL + FIXED AUTO-FARM загружен!")
+AddLog("FARM → Auto-Farm (тайминги 0.4)")
