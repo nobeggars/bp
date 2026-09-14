@@ -1,10 +1,10 @@
 --[[
-    GHOSTWARE v4.5 — GOD MODE + AUTO-FARM
-    Author: I.S.-1 + Gemini Fix
+    GHOSTWARE v4.7 — FULL STABLE + GOD MODE FIX
+    Author: I.S.-1
     Fixes:
-    - Auto-Farm: fireproximityprompt для Log, Gas, Fuel, Barrel, Canister
-    - God Mode: Humanoid Physics + ForceField + TouchTransmitter removal
-    - All previous functions
+    - God Mode: ForceField + Health Restore + TouchTransmitter removal (NO Physics!)
+    - Auto-Farm: Log, Gas, Fuel, Barrel, Canister + fireproximityprompt + return to start
+    - ALL previous functions: ESP, Scan, Kill Aura, Anti-TP, Fly, Noclip, Night Vision
 --]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -87,7 +87,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -80, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Text = "★ GHOSTWARE v4.5"
+TitleLabel.Text = "★ GHOSTWARE v4.7"
 TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 11
@@ -168,7 +168,7 @@ LogText.TextXAlignment = Enum.TextXAlignment.Left
 LogText.TextYAlignment = Enum.TextYAlignment.Top
 LogText.TextWrapped = true
 LogText.RichText = true
-LogText.Text = "[v4.5] Загружен.\n"
+LogText.Text = "[v4.7] Загружен.\n"
 LogText.Parent = LogScroll
 
 local function AddLog(msg, isErr)
@@ -308,19 +308,17 @@ CreateToggle(mainTab, "2. ANTI-TP", function()
     end
 end)
 
--- ========== GOD MODE (в MAIN) ==========
-CreateToggle(mainTab, "3. GOD MODE", function()
+-- ========== GOD MODE (ИСПРАВЛЕННЫЙ — БЕЗ PHYSICS) ==========
+CreateToggle(mainTab, "3. GOD MODE (безопасный)", function()
     godModeEnabled = not godModeEnabled
     AddLog("God Mode: " .. (godModeEnabled and "ВКЛ" or "ВЫКЛ"))
     
     if godModeEnabled then
+        -- Создаём ForceField
         local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        
-        -- ForceField
-        if char and not char:FindFirstChild("GhostGodField") then
+        if char and not char:FindFirstChild("GhostShield") then
             local ff = Instance.new("ForceField")
-            ff.Name = "GhostGodField"
+            ff.Name = "GhostShield"
             ff.Visible = false
             ff.Parent = char
         end
@@ -334,23 +332,30 @@ CreateToggle(mainTab, "3. GOD MODE", function()
             end
         end
         
-        -- ChangeState Physics
-        if hum then
-            task.spawn(function()
-                while godModeEnabled do
-                    task.wait(0.1)
-                    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                    if h and h.Health > 0 then
-                        pcall(function() h:ChangeState(Enum.HumanoidStateType.Physics) end)
-                    end
+        -- Восстанавливаем здоровье каждые 0.1 сек
+        if godModeConnection then godModeConnection:Disconnect() end
+        godModeConnection = RunService.Heartbeat:Connect(function()
+            if not godModeEnabled then return end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 and hum.Health < hum.MaxHealth then
+                    hum.Health = hum.MaxHealth
                 end
-            end)
-        end
+                if not char:FindFirstChild("GhostShield") then
+                    local ff = Instance.new("ForceField")
+                    ff.Name = "GhostShield"
+                    ff.Visible = false
+                    ff.Parent = char
+                end
+            end
+        end)
     else
         local char = LocalPlayer.Character
-        if char and char:FindFirstChild("GhostGodField") then
-            char.GhostGodField:Destroy()
+        if char and char:FindFirstChild("GhostShield") then
+            char.GhostShield:Destroy()
         end
+        if godModeConnection then godModeConnection:Disconnect() godModeConnection = nil end
     end
 end)
 
@@ -548,7 +553,7 @@ end)
 -- ========== FARM TAB ==========
 local farmTab = tabContents["FARM"]
 
--- ========== AUTO-FARM (С fireproximityprompt) ==========
+-- ========== AUTO-FARM (ИСПРАВЛЕННЫЙ) ==========
 CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
     autoFarmEnabled = not autoFarmEnabled
     AddLog("Auto-Farm: " .. (autoFarmEnabled and "ВКЛ" or "ВЫКЛ"))
@@ -560,7 +565,6 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                 local hrp = getHRP()
                 if not hrp then continue end
                 
-                -- Ищем костёр
                 local mainFire = workspace:FindFirstChild("MainFire", true)
                 if not mainFire then
                     AddLog("MainFire не найден", true)
@@ -568,7 +572,6 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                     continue
                 end
                 
-                -- Ищем горючее
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if not autoFarmEnabled then break end
                     
@@ -586,6 +589,7 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                                       or (obj.Parent and obj.Parent:FindFirstChildOfClass("ProximityPrompt", true))
                         
                         if prompt then
+                            local previousLocation = hrp.CFrame
                             local pos
                             if obj:IsA("Model") then
                                 pos = obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position
@@ -594,16 +598,13 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                             end
                             
                             if pos then
-                                -- 1. ТП к предмету
                                 hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                                task.wait(0.1)
-                                
-                                -- 2. Собираем
+                                task.wait(0.15)
                                 pcall(function() fireproximityprompt(prompt) end)
                                 AddLog("Собран: " .. obj.Name)
-                                task.wait(0.1)
+                                task.wait(0.15)
                                 
-                                -- 3. ТП к костру
+                                -- ТП к костру
                                 local firePos
                                 if mainFire:IsA("Model") then
                                     firePos = mainFire.PrimaryPart and mainFire.PrimaryPart.Position or mainFire:GetPivot().Position
@@ -613,16 +614,18 @@ CreateToggle(farmTab, "1. AUTO-FARM КОСТРА", function()
                                 
                                 if firePos then
                                     hrp.CFrame = CFrame.new(firePos + Vector3.new(0, 3, 0))
-                                    task.wait(0.1)
+                                    task.wait(0.15)
                                     
-                                    -- 4. Сдаём в костёр
                                     local firePrompt = mainFire:FindFirstChildOfClass("ProximityPrompt", true)
                                     if firePrompt then
                                         pcall(function() fireproximityprompt(firePrompt) end)
                                         AddLog("Сдан в костёр")
                                     end
-                                    task.wait(0.2)
+                                    task.wait(0.15)
                                 end
+                                
+                                hrp.CFrame = previousLocation
+                                task.wait(0.1)
                             end
                         end
                     end
@@ -785,17 +788,6 @@ RunService.Stepped:Connect(function()
             end
         end
     end
-    
-    -- Поддерживаем God Mode при переспавнах
-    if godModeEnabled then
-        local char = LocalPlayer.Character
-        if char and not char:FindFirstChild("GhostGodField") then
-            local ff = Instance.new("ForceField")
-            ff.Name = "GhostGodField"
-            ff.Visible = false
-            ff.Parent = char
-        end
-    end
 end)
 
 RunService.RenderStepped:Connect(function()
@@ -818,6 +810,6 @@ RunService.RenderStepped:Connect(function()
     if move.Magnitude > 0 then hrp.Velocity = move.Unit * 100 else hrp.Velocity = Vector3.new(0, 0, 0) end
 end)
 
-AddLog("v4.5 GOD MODE + AUTO-FARM загружен!")
-AddLog("MAIN → God Mode")
+AddLog("v4.7 FULL + GOD MODE FIX загружен!")
+AddLog("MAIN → God Mode (безопасный)")
 AddLog("FARM → Auto-Farm + Kill Aura")
