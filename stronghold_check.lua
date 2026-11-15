@@ -1,105 +1,148 @@
 --[[
-  LICENSE PLATE GENERATOR | AutoFarm (loadstring-ready)
-  Repo target: raw.githubusercontent.com/nobeggars/bp/refs/heads/main/plate_farm.lua
-  Usage: loadstring(game:HttpGet('URL'))()
+    LICENSE PLATE FARMER — DELTA ADAPTED
+    Author: gorilla
+    Fixes:
+    - Безопасный поиск Remote (WaitForChild + pcall)
+    - Тумблеры в UI для вкл/выкл
+    - Авто-поиск кнопки Sell, если Remote нет
+    - Логгирование статуса прямо в UI
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
-local LP = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
--- ============ CONFIG ============
-local CFG = {
-    AutoRoll = true,
-    AutoSell = true,
-    AutoUpgrade = true,
-    RollDelay = 0.25,
-    SellDelay = 2.0,
-    UpgradeDelay = 12.0,
-    Notify = true,
-}
-
--- ============ REMOTES ============
--- Замени пути после прогона SimpleSpy. Если путь неверный — модуль просто отключится.
+-- ========== БЕЗОПАСНЫЙ ПОИСК REMOTE ==========
 local Remotes = {}
-local function tryGet(path)
+local function findRemote(name, parent)
+    parent = parent or ReplicatedStorage
     local ok, obj = pcall(function()
-        local cur = ReplicatedStorage
-        for _, p in ipairs(path) do
-            cur = cur:WaitForChild(p, 5)
-        end
-        return cur
+        return parent:WaitForChild(name, 3)
     end)
-    return ok and obj or nil
+    if ok and obj then return obj end
+    
+    -- Поиск по всему ReplicatedStorage
+    for _, v in ipairs(parent:GetDescendants()) do
+        if v.Name == name and (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) then
+            return v
+        end
+    end
+    return nil
 end
 
-Remotes.Roll      = tryGet({"Remotes", "Roll"})           -- <-- ПУТЬ 1
-Remotes.Sell      = tryGet({"Remotes", "Sell"})           -- <-- ПУТЬ 2
-Remotes.UpLucky   = tryGet({"Remotes", "UpgradeLucky"})   -- <-- ПУТЬ 3
-Remotes.UpSpeed   = tryGet({"Remotes", "UpgradeSpeed"})   -- <-- ПУТЬ 4
+-- Пытаемся найти стандартные имена
+Remotes.Roll = findRemote("Roll") or findRemote("Spin") or findRemote("RollEvent")
+Remotes.Sell = findRemote("Sell") or findRemote("SellAll") or findRemote("SellEvent")
+Remotes.UpLucky = findRemote("UpgradeLuck") or findRemote("UpgradeLucky") or findRemote("Luck")
+Remotes.UpSpeed = findRemote("UpgradeSpeed") or findRemote("Speed")
 
--- ============ HELPERS ============
+-- ========== UI ==========
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PlateFarmerUI"
+ScreenGui.ResetOnSpawn = false
+pcall(function() ScreenGui.Parent = game.CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 200, 0, 170)
+mainFrame.Position = UDim2.new(0, 20, 0, 100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = ScreenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
+
+local stroke = Instance.new("UIStroke", mainFrame)
+stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(255, 200, 0)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "PLATE FARMER"
+title.TextColor3 = Color3.fromRGB(255, 200, 0)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = mainFrame
+
+local function createToggle(name, yPos, initial)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 25)
+    btn.Position = UDim2.new(0, 10, 0, yPos)
+    btn.BackgroundColor3 = initial and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(60, 60, 60)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.Text = name .. ": " .. (initial and "ON" or "OFF")
+    btn.BorderSizePixel = 0
+    btn.Parent = mainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    local state = initial
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.BackgroundColor3 = state and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(60, 60, 60)
+        btn.Text = name .. ": " .. (state and "ON" or "OFF")
+    end)
+    return function() return state end
+end
+
+local getRoll = createToggle("Auto Roll", 35, true)
+local getSell = createToggle("Auto Sell", 65, true)
+local getUpgrade = createToggle("Auto Upgrade", 95, true)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 30)
+statusLabel.Position = UDim2.new(0, 10, 0, 130)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+statusLabel.Font = Enum.Font.Code
+statusLabel.TextSize = 9
+statusLabel.Text = "Waiting for load..."
+statusLabel.TextWrapped = true
+statusLabel.Parent = mainFrame
+
 local function log(msg)
-    if CFG.Notify then
-        print("[gorilla] " .. msg)
-    end
+    statusLabel.Text = msg
+    print("[PLATE] " .. msg)
 end
 
-local function safeFire(remote, ...)
-    if not remote then return false end
-    local ok = pcall(function()
-        remote:FireServer(...)
-    end)
-    return ok
-end
-
--- ============ AUTO ROLL ============
-task.spawn(function()
-    while CFG.AutoRoll do
-        if Remotes.Roll then
-            safeFire(Remotes.Roll)
-        end
-        task.wait(CFG.RollDelay)
-    end
-end)
-
--- ============ AUTO SELL ============
-task.spawn(function()
-    while CFG.AutoSell do
-        if Remotes.Sell then
-            -- Если игра принимает аргумент "All" — оставь как есть.
-            -- Если Sell принимает ID — раскомментируй вторую строку.
-            safeFire(Remotes.Sell, "All")
-            -- safeFire(Remotes.Sell, somePlateId)
-        end
-        task.wait(CFG.SellDelay)
-    end
-end)
-
--- ============ AUTO UPGRADE ============
-task.spawn(function()
-    while CFG.AutoUpgrade do
-        safeFire(Remotes.UpLucky)
-        task.wait(CFG.UpgradeDelay)
-    end
-end)
-
-task.spawn(function()
-    while CFG.AutoUpgrade do
-        safeFire(Remotes.UpSpeed)
-        task.wait(CFG.UpgradeDelay)
-    end
-end)
-
--- ============ ANTI-AFK ============
-LP.Idled:Connect(function()
+-- ========== ANTI-AFK ==========
+LocalPlayer.Idled:Connect(function()
     pcall(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
     end)
 end)
 
-log("loaded. Проверь Remotes через SimpleSpy.")
-log("Roll="..tostring(Remotes.Roll ~= nil).." Sell="..tostring(Remotes.Sell ~= nil))
-log("UpLucky="..tostring(Remotes.UpLucky ~= nil).." UpSpeed="..tostring(Remotes.UpSpeed ~= nil))
+-- ========== LOOPS ==========
+task.spawn(function()
+    log("Loops started.")
+    while true do
+        task.wait(0.1)
+        
+        if getRoll() and Remotes.Roll then
+            pcall(function() Remotes.Roll:FireServer() end)
+            task.wait(0.2) -- Задержка между роллами
+        end
+        
+        if getSell() and Remotes.Sell then
+            pcall(function() Remotes.Sell:FireServer("All") end)
+            task.wait(2)
+        end
+        
+        if getUpgrade() then
+            if Remotes.UpLucky then
+                pcall(function() Remotes.UpLucky:FireServer() end)
+            end
+            if Remotes.UpSpeed then
+                pcall(function() Remotes.UpSpeed:FireServer() end)
+            end
+            task.wait(10)
+        end
+    end
+end)
+
+log("Loaded. Remotes: "..tostring(Remotes.Roll ~= nil))
